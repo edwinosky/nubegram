@@ -1,0 +1,17 @@
+{
+  "name": "teledrive",
+  "version": "1.8.3",
+  "repository": "git@github.com:mgilangjanuar/teledrive.git",
+  "author": "M Gilang Januar <mgilangjanuar@gmail.com>",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "web": "yarn workspace web",
+    "server": "yarn workspace server",
+    "deploy": "yarn workspaces run build && vercel --prod"
+  },
+  "workspaces": [
+    "web",
+    "server"
+  ]
+}
