@@ -76,7 +76,7 @@ const Navbar: React.FC<Props> = ({ user }) => {
         {/* <Menu.Item onClick={() => history.push('/terms')} key="terms">Terms</Menu.Item> */}
         {/* <Menu.Item onClick={() => history.push('/refund')} key="refund">Refund Policy</Menu.Item> */}
         <Menu.Item onClick={() => window.open('https://www.onlypacks.club', '_blank')} key="blog">BLOG</Menu.Item>
-        <Menu.Item onClick={() => window.open('https://analytics.teledriveapp.com/share/4RhiPDRP/TeleDrive', '_blank')} key="analytics">ANALITYCS</Menu.Item>
+        <Menu.Item onClick={() => window.open('https://analitycs.onlypacks.club/share/LJKpC9hd/nubegram', '_blank')} key="analytics">ANALITYCS</Menu.Item>
       </Menu>
     </Layout.Header>
 
