@@ -10,14 +10,14 @@ export const CONNECTION_RETRIES = 10
 
 export const PLANS = {
   free: {
-    sharedFiles: 30,
-    publicFiles: 10,
-    sharingUsers: 5
+    sharedFiles: 3000,
+    publicFiles: 1000,
+    sharingUsers: 5000
   },
   premium: {
-    sharedFiles: 400,
-    publicFiles: 200,
-    sharingUsers: 60
+    sharedFiles: 4000,
+    publicFiles: 2000,
+    sharingUsers: 60000
   },
   business: {
     sharedFiles: Infinity,

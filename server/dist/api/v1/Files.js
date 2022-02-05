@@ -346,8 +346,8 @@ let Files = Files_1 = class Files {
             if (!file) {
                 throw { status: 400, body: { error: 'File upload is required' } };
             }
-            if (file.size > 512 * 1024) {
-                throw { status: 400, body: { error: 'Maximum file part size is 500kB' } };
+            if (file.size > 5120 * 1024) {
+                throw { status: 400, body: { error: 'Maximum file part size is 5000kB' } };
             }
             if ((!((_a = req.user) === null || _a === void 0 ? void 0 : _a.plan) || ((_b = req.user) === null || _b === void 0 ? void 0 : _b.plan) === 'free') && /\.part\d+$/gi.test(name)) {
                 throw { status: 402, body: { error: 'Payment required' } };
@@ -560,7 +560,7 @@ let Files = Files_1 = class Files {
             }
             const totalFileSize = files.reduce((res, file) => res.add(file.size || 0), (0, big_integer_1.default)(0));
             if (!req.user || !req.user.plan || req.user.plan === 'free') {
-                if ((0, big_integer_1.default)(usage.usage).add((0, big_integer_1.default)(totalFileSize)).greater(1500000000)) {
+                if ((0, big_integer_1.default)(usage.usage).add((0, big_integer_1.default)(totalFileSize)).greater(5500000000)) {
                     throw { status: 402, body: { error: 'You just hit the daily bandwidth limit' } };
                 }
             }

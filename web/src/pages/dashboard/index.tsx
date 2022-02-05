@@ -271,7 +271,7 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
     try {
       await req.post('/files/sync', {}, {
         params: {
-          limit: 50,
+          limit: 500,
           parent_id: parent?.id || undefined
         }
       })
@@ -458,7 +458,7 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
       cancelButtonProps={{ shape: 'round' }}
       okButtonProps={{ shape: 'round' }}>
         <Typography.Paragraph>
-          Are you sure to sync up to 50 files from your Saved Messages to the <code>{typeof parent?.name === 'string' ? parent.name : 'root'}</code> directory?
+          Are you sure to sync up to 500 files from your Saved Messages to the <code>{typeof parent?.name === 'string' ? parent.name : 'root'}</code> directory?
         </Typography.Paragraph>
       </Modal>
     </Layout>

@@ -220,66 +220,6 @@ const Login: React.FC<Props> = ({ me }) => {
       <Row style={{ marginTop: '30px' }}>
         <Col xxl={{ span: 8, offset: 8 }} xl={{ span: 8, offset: 8 }} lg={{ span: 10, offset: 7 }} md={{ span: 14, offset: 5 }} span={22} offset={1}>
           <Collapse>
-            <Collapse.Panel key="1" showArrow={false} header={<Typography.Text>
-              <GlobalOutlined /> Data center region
-            </Typography.Text>}>
-              <Typography.Paragraph type="secondary" style={{ fontSize: '14px' }}>
-                This will affect your upload and download speed, choose the nearest datacenter region to you.
-              </Typography.Paragraph>
-              <Row gutter={12} justify="center">
-                <Col span={24} md={8} style={{ textAlign: 'center' }}>
-                  <Card hoverable style={{ marginBottom: '12px' }} onClick={() => {
-                    setDc('sg')
-                    localStorage.setItem('dc', 'sg')
-                    return window.location.replace('https://teledriveapp.com/login')
-                  }}>
-                    <Typography.Paragraph style={dc === 'sg' || !dc ? {} : { visibility: 'hidden' }}>
-                      <CheckCircleTwoTone />
-                    </Typography.Paragraph>
-                    <Typography.Paragraph>
-                      <img style={{ width: '100%', maxWidth: '80px' }} src="https://upload.wikimedia.org/wikipedia/commons/4/48/Flag_of_Singapore.svg" />
-                    </Typography.Paragraph>
-                    <Typography.Paragraph>
-                      Singapore
-                    </Typography.Paragraph>
-                  </Card>
-                </Col>
-                <Col span={24} md={8} style={{ textAlign: 'center' }}>
-                  <Card hoverable style={{ marginBottom: '12px' }} onClick={() => {
-                    setDc('ge')
-                    localStorage.setItem('dc', 'ge')
-                    return window.location.replace('https://ge.teledriveapp.com/login')
-                  }}>
-                    <Typography.Paragraph style={dc === 'ge' ? {} : { visibility: 'hidden' }}>
-                      <CheckCircleTwoTone />
-                    </Typography.Paragraph>
-                    <Typography.Paragraph>
-                      <img style={{ width: '100%', maxWidth: '80px' }} src="https://upload.wikimedia.org/wikipedia/commons/b/ba/Flag_of_Germany.svg" />
-                    </Typography.Paragraph>
-                    <Typography.Paragraph>
-                      Frankfurt
-                    </Typography.Paragraph>
-                  </Card>
-                </Col>
-                <Col span={24} md={8} style={{ textAlign: 'center' }}>
-                  <Card hoverable style={{ marginBottom: '12px' }} onClick={() => {
-                    setDc('us')
-                    localStorage.setItem('dc', 'us')
-                    return window.location.replace('https://us.teledriveapp.com/login')
-                  }}>
-                    <Typography.Paragraph style={dc === 'us' ? {} : { visibility: 'hidden' }}>
-                      <CheckCircleTwoTone />
-                    </Typography.Paragraph>
-                    <Typography.Paragraph>
-                      <img style={{ width: '100%', maxWidth: '80px' }} src="https://upload.wikimedia.org/wikipedia/commons/0/05/US_flag_51_stars.svg" />
-                    </Typography.Paragraph>
-                    <Typography.Paragraph>
-                      New York
-                    </Typography.Paragraph>
-                  </Card>
-                </Col>
-              </Row>
-            </Collapse.Panel>
           </Collapse>
           <br /><br />
 

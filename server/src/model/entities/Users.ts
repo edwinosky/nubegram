@@ -17,7 +17,7 @@ export class Users extends BaseModelWithID {
   @Column({ default: null })
   tg_id?: string
 
-  @Column({ default: 'free' })
+  @Column({ default: 'premium' })
   plan?: 'free' | 'premium' | 'professional'
 
   @Column({ default: null })

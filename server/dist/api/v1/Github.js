@@ -32,13 +32,13 @@ let Github = class Github {
                 throw { status: 400, body: { error: 'Token is unavailable' } };
             }
             const { data: collaborators } = yield Cache_1.Redis.connect().getFromCacheFirst('github:collaborators', () => __awaiter(this, void 0, void 0, function* () {
-                const resp = yield axios_1.default.get('https://api.github.com/repos/mgilangjanuar/teledrive/collaborators', {
+                const resp = yield axios_1.default.get('https://api.github.com/repos/edwinosky/nubegram/collaborators', {
                     headers: { authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
                 });
                 return { data: resp.data };
             }), 21600);
             const { data: contributors } = yield Cache_1.Redis.connect().getFromCacheFirst('github:contributors', () => __awaiter(this, void 0, void 0, function* () {
-                const resp = yield axios_1.default.get('https://api.github.com/repos/mgilangjanuar/teledrive/contributors', {
+                const resp = yield axios_1.default.get('https://api.github.com/repos/edwinosky/nubegram/contributors', {
                     headers: { authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
                 });
                 return { data: resp.data };

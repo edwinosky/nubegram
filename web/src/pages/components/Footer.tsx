@@ -29,17 +29,6 @@ const Footer: React.FC<Props> = () => {
               </Typography.Paragraph>
             </Col>
             <Col md={6} sm={12} span={24} style={{ marginBottom: '30px' }}>
-              <Typography.Title level={5}>SOPORTE</Typography.Title>
-              <Typography.Paragraph>
-                <a href="https://opencollective.com/teledrive/contribute" target="_blank">
-                  <img src="https://opencollective.com/teledrive/contribute/button@2x.png?color=blue" style={{ width: '100%', maxWidth: '240px' }} />
-                </a>
-              </Typography.Paragraph>
-              <Typography.Paragraph type="secondary">
-                Or, become <a href="https://onlypacks.club/contact">a sponsor</a>.
-              </Typography.Paragraph>
-            </Col>
-            <Col md={6} sm={12} span={24} style={{ marginBottom: '30px' }}>
               <Typography.Title level={5}>LINKS</Typography.Title>
               <Row>
                 <Col span={12}>

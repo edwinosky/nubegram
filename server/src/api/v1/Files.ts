@@ -346,8 +346,8 @@ export class Files {
       throw { status: 400, body: { error: 'File upload is required' } }
     }
 
-    if (file.size > 512 * 1024) {
-      throw { status: 400, body: { error: 'Maximum file part size is 500kB' } }
+    if (file.size > 5120 * 1024) {
+      throw { status: 400, body: { error: 'Maximum file part size is 5000kB' } }
     }
 
     if ((!req.user?.plan || req.user?.plan === 'free') && /\.part\d+$/gi.test(name)) {
@@ -567,7 +567,7 @@ export class Files {
     const totalFileSize = files.reduce((res, file) => res.add(file.size || 0), bigInt(0))
     if (!req.user || !req.user.plan || req.user.plan === 'free') {      // not expired and free plan
       // check quota
-      if (bigInt(usage.usage).add(bigInt(totalFileSize)).greater(1_500_000_000)) {
+      if (bigInt(usage.usage).add(bigInt(totalFileSize)).greater(5_500_000_000)) {
         throw { status: 402, body: { error: 'You just hit the daily bandwidth limit' } }
       }
     }
