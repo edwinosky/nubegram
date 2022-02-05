@@ -36,10 +36,12 @@ interface Props {
   data: any,
   error: any,
   mutate: () => void,
-  pageParams: { id: string }
+  pageParams: { id: string },
+  isInDrawer?: boolean,
+  onCloseDrawer?: () => void
 }
 
-const Viewer: React.FC<Props> = ({ data, me, error, mutate, pageParams }) => {
+const Viewer: React.FC<Props> = ({ data, me, error, mutate, pageParams, isInDrawer, onCloseDrawer }) => {
   const history = useHistory()
   const [collapsed, setCollapsed] = useState<boolean>()
   const { data: user } = useSWRImmutable(data?.file ? `/users/${data.file.user_id}` : null, fetcher)
@@ -92,13 +94,18 @@ const Viewer: React.FC<Props> = ({ data, me, error, mutate, pageParams }) => {
     // if (errorMe) {
     //   return history.push('/login')
     // }
+    if (isInDrawer) return onCloseDrawer?.()
     return history.goBack()
   }
 
   return <>
     <Layout style={{ minHeight: '100vh', overflow: 'hidden', background: '#2a2a2a', color: 'rgb(251,251,254)' }}>
       <Layout.Content>
-        {data?.file.type === 'image' ? <img style={{ maxHeight: '100%', maxWidth: '100%', position: 'absolute', margin: 'auto', top: 0, right: 0, bottom: 0, left: 0, imageOrientation: 'from-image' }} src={links?.raw} /> : <iframe onLoad={(e: any) => {
+        {/* {links?.raw && <DocViewer documents={[{ uri: links?.raw as string }]} /> */}
+        {data?.file.type === 'image' ? <img style={{ maxHeight: '100%', maxWidth: '100%', position: 'absolute', margin: 'auto', top: 0, right: 0, bottom: 0, left: 0, imageOrientation: 'from-image' }} src={links?.raw} /> : data?.file.type === 'video' ? <video style={{ maxHeight: '100%', maxWidth: '100%', position: 'absolute', margin: 'auto', top: 0, right: 0, bottom: 0, left: 0, imageOrientation: 'from-image' }} controls>
+          <source src={links?.raw} type={data?.file.mime_type} />
+          Your browser does not support HTML video.
+        </video> : <iframe onLoad={(e: any) => {
           try {
             e.target.contentWindow.document.body.style.margin = 0
             e.target.contentWindow.document.body.style.color = 'rgb(251,251,254)'

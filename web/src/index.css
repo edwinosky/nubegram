@@ -88,3 +88,40 @@ html, body {
 .ant-popover-inner-content {
   padding: 0 !important;
 }
+
+.view .ant-drawer-content-wrapper {
+  height: 100vh !important;
+}
+
+.ant-modal.view {
+  position: sticky !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.view .ant-modal-body {
+  padding: 0 !important;
+}
+
+.ant-form-item .change-server.ant-select {
+  width: max-content !important;
+}
+
+.change-server.ant-select .ant-select-selector {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.ant-list-item-action > li {
+  padding: 0 !important;
+}
+
+.ant-list-split .ant-list-header {
+  border-bottom: none !important;
+}
+
+.ant-list-split .ant-list-item {
+  border-bottom: none !important;
+}

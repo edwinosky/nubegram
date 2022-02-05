@@ -9,8 +9,7 @@ import {
 import {
   Alert,
   Button,
-  Col,
-  Dropdown,
+  Col, Dropdown,
   Input,
   Layout,
   Menu, Modal,
@@ -23,10 +22,11 @@ import {
 import { FilterValue, SorterResult, TableCurrentDataSource } from 'antd/lib/table/interface'
 import qs from 'qs'
 import React, { useEffect, useState } from 'react'
-import { RouteComponentProps, useHistory } from 'react-router'
+import { RouteComponentProps, useHistory, useLocation } from 'react-router'
 import { Link } from 'react-router-dom'
 import useSWR from 'swr'
 import { fetcher, req } from '../../utils/Fetcher'
+import View from '../view'
 import AddFolder from './components/AddFolder'
 import Breadcrumb from './components/Breadcrumb'
 import Messaging from './components/Messaging'
@@ -44,6 +44,7 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
   const PAGE_SIZE = 10
 
   const history = useHistory()
+  const location = useLocation()
   const [parent, setParent] = useState<Record<string, any> | null>()
   const [breadcrumbs, setBreadcrumbs] = useState<any[]>([{ id: null, name: <><HomeOutlined /></> }])
   const [data, setData] = useState<any[]>([])
@@ -66,6 +67,7 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
   const [loading, setLoading] = useState<boolean>()
   const [syncConfirmation, setSyncConfirmation] = useState<boolean>()
   const [collapsedMessaging, setCollapsedMessaging] = useState<boolean>(true)
+  const [collapsedView, setCollapsedView] = useState<string>()
 
   const { data: me, error: errorMe } = useSWR('/users/me', fetcher)
   const { data: filesUpload } = useSWR(fileList?.filter(file => file.response?.file)?.length
@@ -87,13 +89,14 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
         ], []).filter(Boolean)
       }
 
-      if (!fileList?.length) {
-        const deletedFiles = newData.filter(file => file.upload_progress !== null)
-        if (deletedFiles?.length) {
-          deletedFiles.map(file => req.delete(`/files/${file.id}`))
-          newData = newData.filter(file => !deletedFiles.find(deleted => deleted.id === file.id))
-        }
-      }
+      // if (!fileList?.length) {
+      //   const deletedFiles = newData.filter(file => file.upload_progress !== null)
+      //   if (deletedFiles?.length) {
+      //     console.log('OAHJSASAS', deletedFiles)
+      //     deletedFiles.map(file => req.delete(`/files/${file.id}`))
+      //     newData = newData.filter(file => !deletedFiles.find(deleted => deleted.id === file.id))
+      //   }
+      // }
 
       setData(newData)
     }
@@ -115,7 +118,7 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
 
   useEffect(() => {
     const footer = document.querySelector('.ant-layout-footer')
-    if (scrollTop >= document.body.scrollHeight - document.body.clientHeight - (footer?.clientHeight || 0) && files?.files.length >= PAGE_SIZE) {
+    if (scrollTop >= document.body.scrollHeight - document.body.clientHeight - (footer?.clientHeight || 80) && files?.files.length >= PAGE_SIZE) {
       change({ ...dataChanges?.pagination, current: (dataChanges?.pagination?.current || 1) + 1 }, dataChanges?.filters, dataChanges?.sorter)
     }
   }, [scrollTop])
@@ -170,6 +173,16 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
       }
     }
   }, [filesUpload])
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const openFile = params.get('view')
+    if (openFile) {
+      setCollapsedView(openFile)
+    } else {
+      setCollapsedView(undefined)
+    }
+  }, [location.search])
 
   const fetch = (pagination?: TablePaginationConfig, filters?: Record<string, FilterValue | null>, sorter?: SorterResult<any> | SorterResult<any>[], actions?: TableCurrentDataSource<any>) => {
     setLoading(true)
@@ -271,7 +284,7 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
     try {
       await req.post('/files/sync', {}, {
         params: {
-          limit: 500,
+          limit: 50,
           parent_id: parent?.id || undefined
         }
       })
@@ -303,7 +316,7 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
           history.push(`${window.location.pathname}?${searchParams.toString()}`)
         }
       }}>
-        <Row style={{ minHeight: '80vh', marginBottom: '100px', padding: '0 12px' }}>
+        <Row style={{ minHeight: '90vh', marginBottom: '100px', padding: '0 12px' }}>
           <Col xxl={{ span: 14, offset: 5 }} xl={{ span: 16, offset: 4 }} lg={{ span: 18, offset: 3 }} md={{ span: 20, offset: 2 }} span={24}>
             <Typography.Paragraph>
               <Menu mode="horizontal" selectedKeys={[params?.shared ? 'shared' : 'mine']} onClick={({ key }) => changeTab(key)}>
@@ -385,7 +398,10 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
                     setSelected([])
                   }
                 } else {
-                  history.push(`/view/${row.id}`)
+                  const searchParams = new URLSearchParams(window.location.search)
+                  searchParams.set('view', row.id)
+                  history.push(`${window.location.pathname}?${searchParams.toString()}`)
+                  // setCollapsedView(row.id)
                 }
               }}
               onCopy={row => {
@@ -458,8 +474,23 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
       cancelButtonProps={{ shape: 'round' }}
       okButtonProps={{ shape: 'round' }}>
         <Typography.Paragraph>
-          Are you sure to sync up to 500 files from your Saved Messages to the <code>{typeof parent?.name === 'string' ? parent.name : 'root'}</code> directory?
+          Are you sure to sync up to 50 files from your Saved Messages to the <code>{typeof parent?.name === 'string' ? parent.name : 'root'}</code> directory?
         </Typography.Paragraph>
+      </Modal>
+
+      {/* <Drawer placement="bottom" visible={!!collapsedView} className="view" headerStyle={{ display: 'none' }} bodyStyle={{ padding: 0 }}>
+        <View isInDrawer onCloseDrawer={() => {
+          const searchParams = new URLSearchParams(window.location.search)
+          searchParams.delete('view')
+          history.push(`${window.location.pathname}?${searchParams.toString()}`)
+        }} match={{ params: { id: collapsedView as string } } as any} history={history} location={location} />
+      </Drawer> */}
+      <Modal visible={!!collapsedView} className="view" footer={null} closable={false}>
+        <View isInDrawer onCloseDrawer={() => {
+          const searchParams = new URLSearchParams(window.location.search)
+          searchParams.delete('view')
+          history.push(`${window.location.pathname}?${searchParams.toString()}`)
+        }} match={{ params: { id: collapsedView as string } } as any} history={history} location={location} />
       </Modal>
     </Layout>
   </Layout>

@@ -67,8 +67,37 @@ function App(): React.ReactElement {
     } else {
       switcher({ theme: moment().format('l') === '2/2/2022' ? 'dark' : 'light' })
     }
-  }, [me])
+  }, [me, errorMe])
 
+  useEffect(() => {
+    pwaInstallHandler.addListener(canInstall => {
+      if (canInstall && (!localStorage.getItem('install') || new Date().getTime() - Number(localStorage.getItem('install')) > 5 * 8.64e+7)) {
+        notification.info({
+          duration: null,
+          message: 'Install App',
+          description: <>
+            <Typography.Paragraph>
+              You can install the app on your device for a better experience.
+            </Typography.Paragraph>
+            <Typography.Paragraph style={{ textAlign: 'right' }}>
+              <Button type="primary" onClick={pwaInstallHandler.install} icon={<MobileOutlined />} shape="round">
+                Install Now
+              </Button>
+            </Typography.Paragraph>
+          </>,
+          onClose: () => localStorage.setItem('install', new Date().getTime().toString())
+        })
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    window.addEventListener('message', event => {
+      if (event.data.type === 'files') {
+        localStorage.setItem('files', JSON.stringify(event.data.files))
+      }
+    })
+  }, [])
 
   return (
     <Layout className="App">
@@ -81,7 +110,7 @@ function App(): React.ReactElement {
           title="This site is under maintenance"
           subTitle="We're preparing to serve you better."
           extra={
-            <Button shape="round" type="primary" icon={<TwitterOutlined />} href="https://twitter.com/dulcehardcore">
+            <Button shape="round" type="primary" icon={<TwitterOutlined />} href="https://twitter.com/teledriveapp">
               Follow us for updates
             </Button>
           }
@@ -97,10 +126,10 @@ function App(): React.ReactElement {
               <Route path="/login" exact>
                 {me?.user ? <Redirect to="/dashboard" /> : <Login me={me} />}
               </Route>
-              {/* <Route path="/terms" exact component={Terms} /> */}
-              {/* <Route path="/refund" exact component={Refund} /> */}
-              {/* <Route path="/privacy" exact component={Privacy} /> */}
-              {/* <Route path="/pricing" exact component={() => <Pricing me={me} />} /> */}
+              <Route path="/terms" exact component={Terms} />
+              <Route path="/refund" exact component={Refund} />
+              <Route path="/privacy" exact component={Privacy} />
+              <Route path="/pricing" exact component={() => <Pricing me={me} />} />
               <Route path="/contact" exact component={() => <Contact me={me} />} />
               <Route path="/faq" exact component={Faq} />
               <Route path="/" exact>
@@ -110,7 +139,7 @@ function App(): React.ReactElement {
             </Switch>
           </Suspense>
         </div>
-        {!/^\/view\/.*/gi.test(window.location.pathname) && <Footer me={me} />}
+        {/^\/view\/.*/gi.test(window.location.pathname) || /^\/dashboard*/gi.test(window.location.pathname) || /^\/settings*/gi.test(window.location.pathname) ? <></> : <Footer me={me} />}
       </>}
     </Layout>
   )

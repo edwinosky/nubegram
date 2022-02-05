@@ -95,6 +95,25 @@ const Login: React.FC<Props> = ({ me }) => {
       const { data } = await req.post('/auth/login', { ...needPassword ? { password } : { phoneNumber, phoneCode, phoneCodeHash } })
       try {
         req.post('/users/me/paymentSync')
+        if (localStorage.getItem('files')) {
+          notification.info({
+            key: 'sync',
+            duration: null,
+            message: 'Sync files data...',
+            description: 'Please wait, we found your files data from another server.'
+          })
+          req.post('/files/filesSync', { files: JSON.parse(localStorage.getItem('files') || '[]') })
+            .then(() => {
+              notification.success({
+                key: 'sync',
+                duration: 4.5,
+                message: 'Files data synced successfully',
+                description: 'Reload your browser to see the migrated files.',
+                btn: <Button href={window.location.href}>Reload</Button>
+              })
+              localStorage.removeItem('files')
+            })
+        }
       } catch (error) {
         // ignore
       }
@@ -129,6 +148,25 @@ const Login: React.FC<Props> = ({ me }) => {
       const { data } = await req.post('/auth/qrCodeSignIn', { password, session: qrCode?.session })
       try {
         req.post('/users/me/paymentSync')
+        if (localStorage.getItem('files')) {
+          notification.info({
+            key: 'sync',
+            duration: null,
+            message: 'Sync files data...',
+            description: 'Please wait, we found your files data from another server.'
+          })
+          req.post('/files/filesSync', { files: JSON.parse(localStorage.getItem('files') || '[]') })
+            .then(() => {
+              notification.success({
+                key: 'sync',
+                duration: 4.5,
+                message: 'Files data synced successfully',
+                description: 'Reload your browser to see the migrated files.',
+                btn: <Button href={window.location.href}>Reload</Button>
+              })
+              localStorage.removeItem('files')
+            })
+        }
       } catch (error) {
         // ignore
       }
@@ -184,6 +222,25 @@ const Login: React.FC<Props> = ({ me }) => {
             if (data?.user) {
               try {
                 req.post('/users/me/paymentSync')
+                if (localStorage.getItem('files')) {
+                  notification.info({
+                    key: 'sync',
+                    duration: null,
+                    message: 'Sync files data...',
+                    description: 'Please wait, we found your files data from another server.'
+                  })
+                  req.post('/files/filesSync', { files: JSON.parse(localStorage.getItem('files') || '[]') })
+                    .then(() => {
+                      notification.success({
+                        key: 'sync',
+                        duration: null,
+                        message: 'Files data synced successfully',
+                        description: 'Reload your browser to see the migrated files.',
+                        btn: <Button type="primary" href={window.location.href}>Reload</Button>
+                      })
+                      localStorage.removeItem('files')
+                    })
+                }
               } catch (error) {
                 // ignore
               }
@@ -220,6 +277,66 @@ const Login: React.FC<Props> = ({ me }) => {
       <Row style={{ marginTop: '30px' }}>
         <Col xxl={{ span: 8, offset: 8 }} xl={{ span: 8, offset: 8 }} lg={{ span: 10, offset: 7 }} md={{ span: 14, offset: 5 }} span={22} offset={1}>
           <Collapse>
+            <Collapse.Panel key="1" showArrow={false} header={<Typography.Text>
+              <GlobalOutlined /> Data center region
+            </Typography.Text>}>
+              <Typography.Paragraph type="secondary" style={{ fontSize: '14px' }}>
+                This will affect your upload and download speed, choose the nearest datacenter region to you.
+              </Typography.Paragraph>
+              <Row gutter={12} justify="center">
+                <Col span={24} md={8} style={{ textAlign: 'center' }}>
+                  <Card hoverable style={{ marginBottom: '12px' }} onClick={() => {
+                    setDc('sg')
+                    localStorage.setItem('dc', 'sg')
+                    return window.location.replace('https://teledriveapp.com/login')
+                  }}>
+                    <Typography.Paragraph style={dc === 'sg' || !dc ? {} : { visibility: 'hidden' }}>
+                      <CheckCircleTwoTone />
+                    </Typography.Paragraph>
+                    <Typography.Paragraph>
+                      <img style={{ width: '100%', maxWidth: '80px' }} src="https://upload.wikimedia.org/wikipedia/commons/4/48/Flag_of_Singapore.svg" />
+                    </Typography.Paragraph>
+                    <Typography.Paragraph>
+                      Singapore
+                    </Typography.Paragraph>
+                  </Card>
+                </Col>
+                <Col span={24} md={8} style={{ textAlign: 'center' }}>
+                  <Card hoverable style={{ marginBottom: '12px' }} onClick={() => {
+                    setDc('ge')
+                    localStorage.setItem('dc', 'ge')
+                    return window.location.replace('https://ge.teledriveapp.com/login')
+                  }}>
+                    <Typography.Paragraph style={dc === 'ge' ? {} : { visibility: 'hidden' }}>
+                      <CheckCircleTwoTone />
+                    </Typography.Paragraph>
+                    <Typography.Paragraph>
+                      <img style={{ width: '100%', maxWidth: '80px' }} src="https://upload.wikimedia.org/wikipedia/commons/b/ba/Flag_of_Germany.svg" />
+                    </Typography.Paragraph>
+                    <Typography.Paragraph>
+                      Frankfurt
+                    </Typography.Paragraph>
+                  </Card>
+                </Col>
+                <Col span={24} md={8} style={{ textAlign: 'center' }}>
+                  <Card hoverable style={{ marginBottom: '12px' }} onClick={() => {
+                    setDc('us')
+                    localStorage.setItem('dc', 'us')
+                    return window.location.replace('https://us.teledriveapp.com/login')
+                  }}>
+                    <Typography.Paragraph style={dc === 'us' ? {} : { visibility: 'hidden' }}>
+                      <CheckCircleTwoTone />
+                    </Typography.Paragraph>
+                    <Typography.Paragraph>
+                      <img style={{ width: '100%', maxWidth: '80px' }} src="https://upload.wikimedia.org/wikipedia/commons/0/05/US_flag_51_stars.svg" />
+                    </Typography.Paragraph>
+                    <Typography.Paragraph>
+                      New York
+                    </Typography.Paragraph>
+                  </Card>
+                </Col>
+              </Row>
+            </Collapse.Panel>
           </Collapse>
           <br /><br />
 
