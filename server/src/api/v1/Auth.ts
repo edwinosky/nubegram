@@ -1,14 +1,17 @@
-import { Api, TelegramClient } from '@mgilangjanuar/telegram'
-import { generateRandomBytes } from '@mgilangjanuar/telegram/Helpers'
-import { computeCheck } from '@mgilangjanuar/telegram/Password'
-import { StringSession } from '@mgilangjanuar/telegram/sessions'
 import { AES } from 'crypto-js'
 import { Request, Response } from 'express'
 import { sign, verify } from 'jsonwebtoken'
 import { serializeError } from 'serialize-error'
+import { Api, Logger, TelegramClient } from 'teledrive-client'
+import { LogLevel } from 'teledrive-client/extensions/Logger'
+import { generateRandomBytes } from 'teledrive-client/Helpers'
+import { computeCheck } from 'teledrive-client/Password'
+import { StringSession } from 'teledrive-client/sessions'
 import { getRepository } from 'typeorm'
-import { Users } from '../../model//entities/Users'
+import { Config } from '../../model/entities/Config'
 import { Files } from '../../model/entities/Files'
+import { Users } from '../../model/entities/Users'
+import { Redis } from '../../service/Cache'
 import { CONNECTION_RETRIES, COOKIE_AGE, TG_CREDS } from '../../utils/Constant'
 import { Endpoint } from '../base/Endpoint'
 import { TGClient } from '../middlewares/TGClient'
@@ -58,7 +61,7 @@ export class Auth {
 
   @Endpoint.POST({ middlewares: [TGSessionAuth] })
   public async login(req: Request, res: Response): Promise<any> {
-    const { phoneNumber, phoneCode, phoneCodeHash, password } = req.body
+    const { phoneNumber, phoneCode, phoneCodeHash, password, invitationCode } = req.body
     if ((!phoneNumber || !phoneCode || !phoneCodeHash) && !password) {
       if (!password) {
         throw { status: 400, body: { error: 'Password is required' } }
@@ -81,11 +84,20 @@ export class Auth {
     }
 
     let user = await Users.findOne({ tg_id: userAuth.id.toString() })
-
+    const config = await Config.findOne()
     if (!user) {
+      if (config?.disable_signup) {
+        throw { status: 403, body: { error: 'Signup is disabled' } }
+      }
+
+      if (config?.invitation_code && config?.invitation_code !== invitationCode) {
+        throw { status: 403, body: { error: 'Invalid invitation code' } }
+      }
+
       const username = userAuth.username || userAuth.phone || phoneNumber
       user = await getRepository<Users>(Users).save({
         username,
+        plan: 'premium',
         name: `${userAuth.firstName || ''} ${userAuth.lastName || ''}`.trim() || username,
         tg_id: userAuth.id.toString()
       }, { reload: true })
@@ -93,6 +105,7 @@ export class Auth {
 
     const session = req.tg.session.save()
     const auth = {
+      session,
       accessToken: sign({ session }, process.env.API_JWT_SECRET, { expiresIn: '15h' }),
       refreshToken: sign({ session }, process.env.API_JWT_SECRET, { expiresIn: '1y' }),
       expiredAfter: Date.now() + COOKIE_AGE
@@ -129,7 +142,11 @@ export class Auth {
 
     try {
       const session = new StringSession(data.session)
-      req.tg = new TelegramClient(session, TG_CREDS.apiId, TG_CREDS.apiHash, { connectionRetries: 5 })
+      req.tg = new TelegramClient(session, TG_CREDS.apiId, TG_CREDS.apiHash, {
+        connectionRetries: CONNECTION_RETRIES,
+        useWSS: false,
+        ...process.env.ENV === 'production' ? { baseLogger: new Logger(LogLevel.NONE) } : {}
+      })
     } catch (error) {
       throw { status: 400, body: { error: 'Invalid key' } }
     }
@@ -144,6 +161,7 @@ export class Auth {
 
       const session = req.tg.session.save()
       const auth = {
+        session,
         accessToken: sign({ session }, process.env.API_JWT_SECRET, { expiresIn: '15h' }),
         refreshToken: sign({ session }, process.env.API_JWT_SECRET, { expiresIn: '100y' }),
         expiredAfter: Date.now() + COOKIE_AGE
@@ -153,7 +171,7 @@ export class Auth {
         .cookie('refreshToken', auth.refreshToken, { maxAge: 3.154e+10, expires: new Date(Date.now() + 3.154e+10) })
         .send({ user, ...auth })
     } catch (error) {
-      throw { status: 500, body: { error: error.message || 'Something error', details: serializeError(error) } }
+      throw { status: 400, body: { error: error.message || 'Something error', details: serializeError(error) } }
     }
   }
 
@@ -173,6 +191,7 @@ export class Auth {
 
     const session = req.tg.session.save()
     const auth = {
+      session,
       accessToken: sign({ session }, process.env.API_JWT_SECRET, { expiresIn: '15h' }),
       refreshToken: sign({ session }, process.env.API_JWT_SECRET, { expiresIn: '100y' }),
       expiredAfter: Date.now() + COOKIE_AGE
@@ -191,11 +210,15 @@ export class Auth {
    */
   @Endpoint.POST({ middlewares: [TGSessionAuth] })
   public async qrCodeSignIn(req: Request, res: Response): Promise<any> {
-    const { password, session: sessionString } = req.body
+    const { password, session: sessionString, invitationCode } = req.body
 
     // handle the 2fa password in the second call
     if (password && sessionString) {
-      req.tg = new TelegramClient(new StringSession(sessionString), TG_CREDS.apiId, TG_CREDS.apiHash, { connectionRetries: CONNECTION_RETRIES, useWSS: false })
+      req.tg = new TelegramClient(new StringSession(sessionString), TG_CREDS.apiId, TG_CREDS.apiHash, {
+        connectionRetries: CONNECTION_RETRIES,
+        useWSS: false,
+        ...process.env.ENV === 'production' ? { baseLogger: new Logger(LogLevel.NONE) } : {}
+      })
       await req.tg.connect()
 
       const passwordData = await req.tg.invoke(new Api.account.GetPassword())
@@ -210,10 +233,20 @@ export class Auth {
       }
 
       let user = await Users.findOne({ tg_id: userAuth.id.toString() })
+      const config = await Config.findOne()
       if (!user) {
+        if (config?.disable_signup) {
+          throw { status: 403, body: { error: 'Signup is disabled' } }
+        }
+
+        if (config?.invitation_code && config?.invitation_code !== invitationCode) {
+          throw { status: 403, body: { error: 'Invalid invitation code' } }
+        }
+
         const username = userAuth.username || userAuth.phone
         user = await getRepository<Users>(Users).save({
           username,
+          plan: 'premium',
           name: `${userAuth.firstName || ''} ${userAuth.lastName || ''}`.trim() || username,
           tg_id: userAuth.id.toString()
         }, { reload: true })
@@ -221,6 +254,7 @@ export class Auth {
 
       const session = req.tg.session.save()
       const auth = {
+        session,
         accessToken: sign({ session }, process.env.API_JWT_SECRET, { expiresIn: '15h' }),
         refreshToken: sign({ session }, process.env.API_JWT_SECRET, { expiresIn: '1y' }),
         expiredAfter: Date.now() + COOKIE_AGE
@@ -254,6 +288,7 @@ export class Auth {
       const buildResponse = (data: Record<string, any> & { user?: { id: string } })=> {
         const session = req.tg.session.save()
         const auth = {
+          session,
           accessToken: sign({ session }, process.env.API_JWT_SECRET, { expiresIn: '15h' }),
           refreshToken: sign({ session }, process.env.API_JWT_SECRET, { expiresIn: '1y' }),
           expiredAfter: Date.now() + COOKIE_AGE
@@ -287,10 +322,20 @@ export class Auth {
         if (result instanceof Api.auth.LoginTokenSuccess && result.authorization instanceof Api.auth.Authorization) {
           const userAuth = result.authorization.user
           let user = await Users.findOne({ tg_id: userAuth.id.toString() })
+          const config = await Config.findOne()
           if (!user) {
+            if (config?.disable_signup) {
+              throw { status: 403, body: { error: 'Signup is disabled' } }
+            }
+
+            if (config?.invitation_code && config?.invitation_code !== invitationCode) {
+              throw { status: 403, body: { error: 'Invalid invitation code' } }
+            }
+
             const username = userAuth['username'] || userAuth['phone']
             user = await getRepository<Users>(Users).save({
               username,
+              plan: 'premium',
               name: `${userAuth['firstName'] || ''} ${userAuth['lastName'] || ''}`.trim() || username,
               tg_id: userAuth.id.toString()
             }, { reload: true })
@@ -303,10 +348,20 @@ export class Auth {
       } else if (data instanceof Api.auth.LoginTokenSuccess && data.authorization instanceof Api.auth.Authorization) {
         const userAuth = data.authorization.user
         let user = await Users.findOne({ tg_id: userAuth.id.toString() })
+        const config = await Config.findOne()
         if (!user) {
+          if (config?.disable_signup) {
+            throw { status: 403, body: { error: 'Signup is disabled' } }
+          }
+
+          if (config?.invitation_code && config?.invitation_code !== invitationCode) {
+            throw { status: 403, body: { error: 'Invalid invitation code' } }
+          }
+
           const username = userAuth['username'] || userAuth['phone']
           user = await getRepository<Users>(Users).save({
             username,
+            plan: 'premium',
             name: `${userAuth['firstName'] || ''} ${userAuth['lastName'] || ''}`.trim() || username,
             tg_id: userAuth.id.toString()
           }, { reload: true })
@@ -337,7 +392,8 @@ export class Auth {
   @Endpoint.POST({ middlewares: [TGSessionAuth] })
   public async logout(req: Request, res: Response): Promise<any> {
     await req.tg.connect()
-    const success = await req.tg.invoke(new Api.auth.LogOut())
+    const success = req.query.destroySession === '1' ? await req.tg.invoke(new Api.auth.LogOut()) : true
+    await Redis.connect().del(`auth:${req.authKey}`)
     return res.clearCookie('authorization').clearCookie('refreshToken').send({ success })
   }
 }

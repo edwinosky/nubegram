@@ -1,5 +1,6 @@
-import { TelegramClient } from '@mgilangjanuar/telegram'
-import { StringSession } from '@mgilangjanuar/telegram/sessions'
+import { Logger, TelegramClient } from 'teledrive-client'
+import { LogLevel } from 'teledrive-client/extensions/Logger'
+import { StringSession } from 'teledrive-client/sessions'
 import { NextFunction, Request, Response } from 'express'
 import { verify } from 'jsonwebtoken'
 import { CONNECTION_RETRIES, TG_CREDS } from '../../utils/Constant'
@@ -19,7 +20,11 @@ export async function TGSessionAuth(req: Request, _: Response, next: NextFunctio
 
   try {
     const session = new StringSession(data.session)
-    req.tg = new TelegramClient(session, TG_CREDS.apiId, TG_CREDS.apiHash, { connectionRetries: CONNECTION_RETRIES, useWSS: false })
+    req.tg = new TelegramClient(session, TG_CREDS.apiId, TG_CREDS.apiHash, {
+      connectionRetries: CONNECTION_RETRIES,
+      useWSS: false,
+      ...process.env.ENV === 'production' ? { baseLogger: new Logger(LogLevel.NONE) } : {}
+    })
   } catch (error) {
     throw { status: 401, body: { error: 'Invalid key' } }
   }

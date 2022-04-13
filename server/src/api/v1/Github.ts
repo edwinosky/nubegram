@@ -12,13 +12,13 @@ export class Github {
       throw { status: 400, body: { error: 'Token is unavailable' } }
     }
     const { data: collaborators } = await Redis.connect().getFromCacheFirst('github:collaborators', async () => {
-      const resp = await axios.get('https://api.github.com/repos/edwinosky/nubegram/collaborators', {
+      const resp = await axios.get('https://api.github.com/repos/mgilangjanuar/teledrive/collaborators', {
         headers: { authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
       })
       return { data: resp.data }
     }, 21600)
     const { data: contributors } = await Redis.connect().getFromCacheFirst('github:contributors', async () => {
-      const resp = await axios.get('https://api.github.com/repos/edwinosky/nubegram/contributors', {
+      const resp = await axios.get('https://api.github.com/repos/mgilangjanuar/teledrive/contributors', {
         headers: { authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
       })
       return { data: resp.data }

@@ -37,6 +37,11 @@ exports.Endpoint = {
             this._handlers.push(this._buildRouteHandler('get', method, descriptor, ...args));
         };
     },
+    HEAD: function (...args) {
+        return (_, method, descriptor) => {
+            this._handlers.push(this._buildRouteHandler('head', method, descriptor, ...args));
+        };
+    },
     POST: function (...args) {
         return (_, method, descriptor) => {
             this._handlers.push(this._buildRouteHandler('post', method, descriptor, ...args));
@@ -67,12 +72,14 @@ exports.Endpoint = {
                         return yield target(req, res, next);
                     }
                     catch (error) {
-                        if (/.*You need to call \.connect\(\)/gi.test(error.message) && trial++ < 5) {
-                            yield new Promise(res => setTimeout(res, 1000));
+                        if (/.*You need to call \.connect\(\)/gi.test(error.message) && trial < 5) {
+                            yield new Promise(res => setTimeout(res, ++trial * 1000));
                             (_a = req.tg) === null || _a === void 0 ? void 0 : _a.connect();
                             return yield execute();
                         }
-                        console.error('RequestWrapper', error);
+                        if (process.env.ENV !== 'production') {
+                            console.error('RequestWrapper', error);
+                        }
                         (_b = req.tg) === null || _b === void 0 ? void 0 : _b.disconnect();
                         const isValidCode = error.code && Number(error.code) > 99 && Number(error.code) < 599;
                         return next(error.code ? {
@@ -117,12 +124,14 @@ exports.Endpoint = {
                             (_a = req.tg) === null || _a === void 0 ? void 0 : _a.disconnect();
                         }
                         catch (error) {
-                            if (/.*You need to call \.connect\(\)/gi.test(error.message) && trial++ < 5) {
-                                yield new Promise(res => setTimeout(res, 1000));
+                            if (/.*You need to call \.connect\(\)/gi.test(error.message) && trial < 5) {
+                                yield new Promise(res => setTimeout(res, ++trial * 1000));
                                 (_b = req.tg) === null || _b === void 0 ? void 0 : _b.connect();
                                 return yield execute();
                             }
-                            console.error('handler', error.message);
+                            if (process.env.ENV !== 'production') {
+                                console.error('handler', error.message);
+                            }
                             (_c = req.tg) === null || _c === void 0 ? void 0 : _c.disconnect();
                             const isValidCode = error.code && Number(error.code) > 99 && Number(error.code) < 599;
                             return next(error.code ? {

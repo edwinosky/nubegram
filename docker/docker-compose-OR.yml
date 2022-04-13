@@ -1,0 +1,48 @@
+version: '3'
+
+services:
+  teledrive:
+    command: node server/dist/index.js
+    labels:
+      traefik.http.routers.server.rule: Host(`teledrive.localhost`)
+      traefik.port: 4000
+    ports:
+      - "${PORT:-4000}:${PORT:-4000}"
+    expose:
+      - ${PORT:-4000}
+    build:
+      context: ../.
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_TG_API_ID: ${TG_API_ID}
+        REACT_APP_TG_API_HASH: ${TG_API_HASH}
+    environment:
+      DB_NAME: teledrive
+      DB_HOST: db
+      DB_USERNAME: postgres
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_URI: redis://redis:6379
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:13
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: teledrive
+    volumes:
+      - teledrive_data:/var/lib/postgresql/data
+      - ../server/src/model/migrations/dump.sql:/docker-entrypoint-initdb.d/dump.sql
+      - ../server/src/model/migrations/dump.20220406.sql:/docker-entrypoint-initdb.d/dump.20220406.sql
+
+  redis:
+    image: redis:6
+    restart: always
+
+volumes:
+  teledrive_data:

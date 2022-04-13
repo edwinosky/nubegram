@@ -33,16 +33,15 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Users = void 0;
-const telegram_1 = require("@mgilangjanuar/telegram");
 const axios_1 = __importDefault(require("axios"));
 const moment_1 = __importDefault(require("moment"));
+const teledrive_client_1 = require("teledrive-client");
 const Files_1 = require("../../model/entities/Files");
 const Usages_1 = require("../../model/entities/Usages");
 const Users_1 = require("../../model/entities/Users");
 const Cache_1 = require("../../service/Cache");
-const Midtrans_1 = require("../../service/Midtrans");
-const PayPal_1 = require("../../service/PayPal");
 const FilterQuery_1 = require("../../utils/FilterQuery");
+const StringParser_1 = require("../../utils/StringParser");
 const Endpoint_1 = require("../base/Endpoint");
 const Auth_1 = require("../middlewares/Auth");
 const Key_1 = require("../middlewares/Key");
@@ -53,7 +52,7 @@ let Users = class Users {
             if (!username) {
                 throw { status: 400, body: { error: 'Username is required' } };
             }
-            const data = yield req.tg.invoke(new telegram_1.Api.contacts.Search({
+            const data = yield req.tg.invoke(new teledrive_client_1.Api.contacts.Search({
                 q: username,
                 limit: Number(limit) || 10
             }));
@@ -80,10 +79,10 @@ let Users = class Users {
     }
     find(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
-            const _a = req.query, { sort, offset, limit } = _a, filters = __rest(_a, ["sort", "offset", "limit"]);
+            const _a = req.query, { sort, offset, limit, search } = _a, filters = __rest(_a, ["sort", "offset", "limit", "search"]);
             const [users, length] = yield Users_1.Users.createQueryBuilder('users')
-                .select('users.username')
-                .where((0, FilterQuery_1.buildWhereQuery)(filters) || 'true')
+                .select(req.user.role === 'admin' ? ['users.id', 'users.username', 'users.name', 'users.role', 'users.created_at'] : ['users.username'])
+                .where(search ? `username ilike '%${search}%' or name ilike '%${search}%'` : (0, FilterQuery_1.buildWhereQuery)(filters) || 'true')
                 .skip(Number(offset) || undefined)
                 .take(Number(limit) || undefined)
                 .orderBy((0, FilterQuery_1.buildSort)(sort))
@@ -95,11 +94,9 @@ let Users = class Users {
         var _a;
         return __awaiter(this, void 0, void 0, function* () {
             const { settings } = req.body;
-            if (settings.theme === 'dark' && (!req.user.plan || req.user.plan === 'free') && (0, moment_1.default)().format('l') !== '2/2/2022') {
-                throw { status: 402, body: { error: 'You need to upgrade your plan to use dark theme' } };
-            }
             req.user.settings = Object.assign(Object.assign({}, req.user.settings || {}), settings);
-            yield req.user.save();
+            yield Users_1.Users.update(req.user.id, req.user);
+            yield Cache_1.Redis.connect().del(`auth:${req.authKey}`);
             return res.send({ settings: (_a = req.user) === null || _a === void 0 ? void 0 : _a.settings });
         });
     }
@@ -109,15 +106,16 @@ let Users = class Users {
             if (agreement !== 'permanently removed') {
                 throw { status: 400, body: { error: 'Invalid agreement' } };
             }
-            if (reason) {
+            if (reason && process.env.TG_BOT_TOKEN && process.env.TG_BOT_OWNER_ID) {
                 yield axios_1.default.post(`https://api.telegram.org/bot${process.env.TG_BOT_TOKEN}/sendMessage`, {
                     chat_id: process.env.TG_BOT_OWNER_ID,
-                    text: `😭 ${req.user.name} (@${req.user.username}) removed their account.\n\nReason: ${reason}`
+                    parse_mode: 'Markdown',
+                    text: `😭 ${(0, StringParser_1.markdownSafe)(req.user.name)} (@${(0, StringParser_1.markdownSafe)(req.user.username)}) removed their account.\n\nReason: ${(0, StringParser_1.markdownSafe)(reason)}\n\nfrom: \`${(0, StringParser_1.markdownSafe)(req.headers['cf-connecting-ip'] || req.ip)}\`\ndomain: \`${req.headers['authority'] || req.headers.origin}\`${req.user ? `\nplan: ${req.user.plan}${req.user.subscription_id ? `\npaypal: ${req.user.subscription_id}` : ''}${req.user.midtrans_id ? `\nmidtrans: ${req.user.midtrans_id}` : ''}` : ''}`
                 });
             }
             yield Files_1.Files.delete({ user_id: req.user.id });
-            yield req.user.remove();
-            const success = yield req.tg.invoke(new telegram_1.Api.auth.LogOut());
+            yield Users_1.Users.delete(req.user.id);
+            const success = yield req.tg.invoke(new teledrive_client_1.Api.auth.LogOut());
             return res.clearCookie('authorization').clearCookie('refreshToken').send({ success });
         });
     }
@@ -162,7 +160,8 @@ let Users = class Users {
                 req.user.subscription_id = result === null || result === void 0 ? void 0 : result.subscription_id;
                 req.user.midtrans_id = result === null || result === void 0 ? void 0 : result.midtrans_id;
                 req.user.plan = result === null || result === void 0 ? void 0 : result.plan;
-                yield req.user.save();
+                yield Users_1.Users.update(req.user.id, req.user);
+                yield Cache_1.Redis.connect().del(`auth:${req.authKey}`);
             }
             return res.status(202).send({ accepted: true });
         });
@@ -182,7 +181,6 @@ let Users = class Users {
         });
     }
     retrieve(req, res) {
-        var _a, _b;
         return __awaiter(this, void 0, void 0, function* () {
             const { username, param } = req.params;
             if (param === 'photo') {
@@ -198,48 +196,6 @@ let Users = class Users {
                 res.write(file);
                 return res.end();
             }
-            if (username === 'me' || username === req.user.username) {
-                const username = req.userAuth.username || req.userAuth.phone;
-                let paymentDetails = null, midtransPaymentDetails = null;
-                if (req.user.subscription_id) {
-                    try {
-                        paymentDetails = yield Cache_1.Redis.connect().getFromCacheFirst(`paypal:subscription:${req.user.subscription_id}`, () => __awaiter(this, void 0, void 0, function* () { return yield new PayPal_1.PayPal().getSubscription(req.user.subscription_id); }), 600);
-                    }
-                    catch (error) {
-                    }
-                }
-                if (req.user.midtrans_id) {
-                    try {
-                        midtransPaymentDetails = yield Cache_1.Redis.connect().getFromCacheFirst(`midtrans:transaction:${req.user.midtrans_id}`, () => __awaiter(this, void 0, void 0, function* () { return yield new Midtrans_1.Midtrans().getTransactionStatus(req.user.midtrans_id); }), 600);
-                        if (!(midtransPaymentDetails === null || midtransPaymentDetails === void 0 ? void 0 : midtransPaymentDetails.transaction_status)) {
-                            midtransPaymentDetails = null;
-                        }
-                    }
-                    catch (error) {
-                    }
-                }
-                let plan = 'free';
-                if (paymentDetails && paymentDetails.plan_id === process.env.PAYPAL_PLAN_PREMIUM_ID) {
-                    const isExpired = new Date().getTime() - new Date((_a = paymentDetails.billing_info) === null || _a === void 0 ? void 0 : _a.last_payment.time).getTime() > 3.154e+10;
-                    if (((_b = paymentDetails.billing_info) === null || _b === void 0 ? void 0 : _b.last_payment) && !isExpired || ['APPROVED', 'ACTIVE'].includes(paymentDetails.status)) {
-                        plan = 'premium';
-                    }
-                }
-                if (midtransPaymentDetails && (midtransPaymentDetails.settlement_time || midtransPaymentDetails.transaction_time)) {
-                    const isExpired = new Date().getTime() - new Date(midtransPaymentDetails.settlement_time || midtransPaymentDetails.transaction_time).getTime() > 3.154e+10;
-                    if (['settlement', 'capture'].includes(midtransPaymentDetails.transaction_status) && !isExpired) {
-                        plan = 'premium';
-                    }
-                }
-                req.user.plan = plan;
-                req.user.username = username;
-                req.user.name = `${req.userAuth.firstName || ''} ${req.userAuth.lastName || ''}`.trim() || username;
-                if (plan === 'free' && new Date().getTime() - req.user.updated_at.getTime() > 2.592e+8) {
-                    req.user.subscription_id = null;
-                    req.user.midtrans_id = null;
-                }
-                yield req.user.save();
-            }
             const user = username === 'me' || username === req.user.username ? req.user : yield Users_1.Users.findOne({ where: [
                     { username },
                     { id: username }
@@ -248,6 +204,33 @@ let Users = class Users {
                 throw { status: 404, body: { error: 'User not found' } };
             }
             return res.send({ user });
+        });
+    }
+    delete(req, res) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (req.user.role !== 'admin') {
+                throw { status: 403, body: { error: 'You are not allowed to do this' } };
+            }
+            const { id } = req.params;
+            yield Files_1.Files.delete({ user_id: id });
+            yield Users_1.Users.delete(id);
+            return res.send({});
+        });
+    }
+    update(req, res) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (req.user.role !== 'admin') {
+                throw { status: 403, body: { error: 'You are not allowed to do this' } };
+            }
+            const { id } = req.params;
+            const { user } = req.body;
+            if (!user) {
+                throw { status: 400, body: { error: 'User is required' } };
+            }
+            yield Users_1.Users.update(id, {
+                role: user === null || user === void 0 ? void 0 : user.role
+            });
+            return res.send({});
         });
     }
 };
@@ -299,6 +282,18 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], Users.prototype, "retrieve", null);
+__decorate([
+    Endpoint_1.Endpoint.DELETE('/:id', { middlewares: [Auth_1.Auth] }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], Users.prototype, "delete", null);
+__decorate([
+    Endpoint_1.Endpoint.PATCH('/:id', { middlewares: [Auth_1.Auth] }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], Users.prototype, "update", null);
 Users = __decorate([
     Endpoint_1.Endpoint.API()
 ], Users);

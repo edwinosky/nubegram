@@ -1,4 +1,4 @@
-import { Api } from '@mgilangjanuar/telegram'
+import { Api } from 'teledrive-client'
 import bigInt from 'big-integer'
 import { Request, Response } from 'express'
 import { Redis } from '../../service/Cache'
@@ -318,7 +318,6 @@ export class Messages {
       res.write(file)
       return res.end()
     } catch (error) {
-      console.error(error)
       return res.redirect('https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png')
     }
   }

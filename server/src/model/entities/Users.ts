@@ -17,7 +17,7 @@ export class Users extends BaseModelWithID {
   @Column({ default: null })
   tg_id?: string
 
-  @Column({ default: 'premium' })
+  @Column({ default: 'free' })
   plan?: 'free' | 'premium' | 'professional'
 
   @Column({ default: null })
@@ -29,12 +29,16 @@ export class Users extends BaseModelWithID {
   @Column({ default: null })
   plan_expired_at?: Date
 
+  @Column({ default: null })
+  role?: string
+
   @OneToMany(() => Files, files => files.user)
   files?: Files[]
 
   @Column('jsonb', { default: null })
   settings?: {
     expandable_rows?: boolean,
-    theme?: 'light' | 'dark'
+    theme?: 'light' | 'dark',
+    saved_location?: string
   }
 }

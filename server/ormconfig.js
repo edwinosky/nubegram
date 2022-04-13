@@ -30,10 +30,10 @@ module.exports = {
     'migrationsDir': 'src/model/migrations'
   },
   namingStrategy: new SnakeNamingStrategy(),
-//   ...process.env.REDIS_URI ? {
-//     cache: {
-//       type: 'redis',
-//       options: process.env.REDIS_URI
-//     }
-   } : {}
+  // ...process.env.REDIS_URI ? {
+  //   cache: {
+  //     type: 'redis',
+  //     options: process.env.REDIS_URI
+  //   }
+  // } : {}
 }

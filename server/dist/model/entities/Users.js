@@ -32,7 +32,7 @@ __decorate([
     __metadata("design:type", String)
 ], Users.prototype, "tg_id", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ default: 'premium' }),
+    (0, typeorm_1.Column)({ default: 'free' }),
     __metadata("design:type", String)
 ], Users.prototype, "plan", void 0);
 __decorate([
@@ -47,6 +47,10 @@ __decorate([
     (0, typeorm_1.Column)({ default: null }),
     __metadata("design:type", Date)
 ], Users.prototype, "plan_expired_at", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ default: null }),
+    __metadata("design:type", String)
+], Users.prototype, "role", void 0);
 __decorate([
     (0, typeorm_1.OneToMany)(() => Files_1.Files, files => files.user),
     __metadata("design:type", Array)

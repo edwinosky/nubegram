@@ -10,8 +10,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TGSessionAuth = void 0;
-const telegram_1 = require("@mgilangjanuar/telegram");
-const sessions_1 = require("@mgilangjanuar/telegram/sessions");
+const teledrive_client_1 = require("teledrive-client");
+const Logger_1 = require("teledrive-client/extensions/Logger");
+const sessions_1 = require("teledrive-client/sessions");
 const jsonwebtoken_1 = require("jsonwebtoken");
 const Constant_1 = require("../../utils/Constant");
 function TGSessionAuth(req, _, next) {
@@ -30,7 +31,7 @@ function TGSessionAuth(req, _, next) {
         }
         try {
             const session = new sessions_1.StringSession(data.session);
-            req.tg = new telegram_1.TelegramClient(session, Constant_1.TG_CREDS.apiId, Constant_1.TG_CREDS.apiHash, { connectionRetries: Constant_1.CONNECTION_RETRIES, useWSS: false });
+            req.tg = new teledrive_client_1.TelegramClient(session, Constant_1.TG_CREDS.apiId, Constant_1.TG_CREDS.apiHash, Object.assign({ connectionRetries: Constant_1.CONNECTION_RETRIES, useWSS: false }, process.env.ENV === 'production' ? { baseLogger: new teledrive_client_1.Logger(Logger_1.LogLevel.NONE) } : {}));
         }
         catch (error) {
             throw { status: 401, body: { error: 'Invalid key' } };

@@ -9,12 +9,24 @@ export const req = axios.create({
 })
 
 req.interceptors.response.use(response => {
-  const requests = [...JSON.parse(sessionStorage.getItem('requests') || '[]'), { date: new Date().toISOString(), ...response }]
-  sessionStorage.setItem('requests', JSON.stringify(requests.slice(-1_000)))
+  try {
+    const requests = [...JSON.parse(sessionStorage.getItem('requests') || '[]'), {
+      date: new Date().toISOString(), ref: location.href, ...response
+    }]
+    sessionStorage.setItem('requests', JSON.stringify(requests.slice(-200)))
+  } catch (error) {
+    // ignore
+  }
   return response
 }, async error => {
-  const requests = [...JSON.parse(sessionStorage.getItem('requests') || '[]'), { date: new Date().toISOString(), ...error }]
-  sessionStorage.setItem('requests', JSON.stringify(requests.slice(-1_000)))
+  try {
+    const requests = [...JSON.parse(sessionStorage.getItem('requests') || '[]'), {
+      date: new Date().toISOString(), ref: location.href, ...error
+    }]
+    sessionStorage.setItem('requests', JSON.stringify(requests.slice(-200)))
+  } catch (error) {
+    // ignore
+  }
 
   if (!error.response) {
     throw error
@@ -22,7 +34,11 @@ req.interceptors.response.use(response => {
 
   const { config, response: { status, data } } = error
   if (status === 401 && data?.details?.errorMessage !== 'SESSION_PASSWORD_NEEDED') {
-    await req.post('/auth/refreshToken')
+    try {
+      await req.post('/auth/refreshToken')
+    } catch (_error) {
+      throw error
+    }
     return await req(config)
   } else if (status === 429) {
     await new Promise(res => setTimeout(res, data.retryAfter || 1000))

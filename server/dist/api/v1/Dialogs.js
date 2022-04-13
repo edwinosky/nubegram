@@ -22,7 +22,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Dialogs = void 0;
-const telegram_1 = require("@mgilangjanuar/telegram");
+const teledrive_client_1 = require("teledrive-client");
 const big_integer_1 = __importDefault(require("big-integer"));
 const Cache_1 = require("../../service/Cache");
 const ObjectParser_1 = require("../../utils/ObjectParser");
@@ -47,24 +47,24 @@ let Dialogs = class Dialogs {
             const { type, id } = req.params;
             let peer;
             if (type === 'channel') {
-                peer = new telegram_1.Api.InputPeerChannel({
+                peer = new teledrive_client_1.Api.InputPeerChannel({
                     channelId: (0, big_integer_1.default)(id),
                     accessHash: (0, big_integer_1.default)(req.query.accessHash)
                 });
             }
             else if (type === 'chat') {
-                peer = new telegram_1.Api.InputPeerChat({
+                peer = new teledrive_client_1.Api.InputPeerChat({
                     chatId: (0, big_integer_1.default)(id)
                 });
             }
             else if (type === 'user') {
-                peer = new telegram_1.Api.InputPeerUser({
+                peer = new teledrive_client_1.Api.InputPeerUser({
                     userId: (0, big_integer_1.default)(id),
                     accessHash: (0, big_integer_1.default)(req.query.accessHash)
                 });
             }
-            const dialogs = yield req.tg.invoke(new telegram_1.Api.messages.GetPeerDialogs({
-                peers: [new telegram_1.Api.InputDialogPeer({ peer })]
+            const dialogs = yield req.tg.invoke(new teledrive_client_1.Api.messages.GetPeerDialogs({
+                peers: [new teledrive_client_1.Api.InputDialogPeer({ peer })]
             }));
             const result = (0, ObjectParser_1.objectParser)(dialogs);
             return res.send({ dialog: Object.assign(Object.assign({}, result), { dialog: result.dialogs[0], message: result.messages[0], chat: result.chats[0], user: result.users[0], dialogs: undefined, messages: undefined, chats: undefined, users: undefined }) });
@@ -75,18 +75,18 @@ let Dialogs = class Dialogs {
             const { type, id } = req.params;
             let peer;
             if (type === 'channel') {
-                peer = new telegram_1.Api.InputPeerChannel({
+                peer = new teledrive_client_1.Api.InputPeerChannel({
                     channelId: (0, big_integer_1.default)(id),
                     accessHash: (0, big_integer_1.default)(req.query.accessHash)
                 });
             }
             else if (type === 'chat') {
-                peer = new telegram_1.Api.InputPeerChat({
+                peer = new teledrive_client_1.Api.InputPeerChat({
                     chatId: (0, big_integer_1.default)(id)
                 });
             }
             else if (type === 'user') {
-                peer = new telegram_1.Api.InputPeerUser({
+                peer = new teledrive_client_1.Api.InputPeerUser({
                     userId: (0, big_integer_1.default)(id),
                     accessHash: (0, big_integer_1.default)(req.query.accessHash)
                 });

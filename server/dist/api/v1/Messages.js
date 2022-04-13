@@ -22,7 +22,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Messages = void 0;
-const telegram_1 = require("@mgilangjanuar/telegram");
+const teledrive_client_1 = require("teledrive-client");
 const big_integer_1 = __importDefault(require("big-integer"));
 const Cache_1 = require("../../service/Cache");
 const Endpoint_1 = require("../base/Endpoint");
@@ -34,25 +34,25 @@ let Messages = class Messages {
             const { offset, limit, accessHash } = req.query;
             let peer;
             if (type === 'channel') {
-                peer = new telegram_1.Api.InputPeerChannel({
+                peer = new teledrive_client_1.Api.InputPeerChannel({
                     channelId: (0, big_integer_1.default)(id),
                     accessHash: (0, big_integer_1.default)(accessHash)
                 });
             }
             else if (type === 'chat') {
-                peer = new telegram_1.Api.InputPeerChat({
+                peer = new teledrive_client_1.Api.InputPeerChat({
                     chatId: (0, big_integer_1.default)(id)
                 });
             }
             else if (type === 'user') {
-                peer = new telegram_1.Api.InputPeerUser({
+                peer = new teledrive_client_1.Api.InputPeerUser({
                     userId: (0, big_integer_1.default)(id),
                     accessHash: (0, big_integer_1.default)(accessHash)
                 });
             }
             const result = yield Cache_1.Redis.connect().getFromCacheFirst(`history:${req.user.id}:${JSON.stringify(req.params)}:${JSON.stringify(req.query)}`, () => __awaiter(this, void 0, void 0, function* () {
                 var _a;
-                const messages = yield req.tg.invoke(new telegram_1.Api.messages.GetHistory({
+                const messages = yield req.tg.invoke(new teledrive_client_1.Api.messages.GetHistory({
                     peer: peer,
                     limit: Number(limit) || 0,
                     offsetId: Number(offset) || 0,
@@ -70,7 +70,7 @@ let Messages = class Messages {
             const { accessHash } = req.query;
             let peer;
             if (type === 'channel') {
-                peer = new telegram_1.Api.InputPeerChannel({
+                peer = new teledrive_client_1.Api.InputPeerChannel({
                     channelId: (0, big_integer_1.default)(id),
                     accessHash: (0, big_integer_1.default)(accessHash)
                 });
@@ -82,7 +82,7 @@ let Messages = class Messages {
                         users: []
                     } });
             }
-            const messages = yield req.tg.invoke(new telegram_1.Api.channels.GetSponsoredMessages({ channel: peer }));
+            const messages = yield req.tg.invoke(new teledrive_client_1.Api.channels.GetSponsoredMessages({ channel: peer }));
             return res.send({ messages });
         });
     }
@@ -93,7 +93,7 @@ let Messages = class Messages {
             const { random_id: randomId } = req.body;
             let peer;
             if (type === 'channel') {
-                peer = new telegram_1.Api.InputPeerChannel({
+                peer = new teledrive_client_1.Api.InputPeerChannel({
                     channelId: (0, big_integer_1.default)(id),
                     accessHash: (0, big_integer_1.default)(accessHash)
                 });
@@ -101,7 +101,7 @@ let Messages = class Messages {
             else {
                 return res.status(202).send({ accepted: true });
             }
-            const accepted = yield req.tg.invoke(new telegram_1.Api.channels.ViewSponsoredMessage({
+            const accepted = yield req.tg.invoke(new teledrive_client_1.Api.channels.ViewSponsoredMessage({
                 channel: peer, randomId: Buffer.from(randomId)
             }));
             return res.status(202).send({ accepted });
@@ -113,27 +113,27 @@ let Messages = class Messages {
             const { accessHash } = req.query;
             let peer;
             if (type === 'channel') {
-                peer = new telegram_1.Api.InputPeerChannel({
+                peer = new teledrive_client_1.Api.InputPeerChannel({
                     channelId: (0, big_integer_1.default)(id),
                     accessHash: (0, big_integer_1.default)(accessHash)
                 });
             }
             else if (type === 'chat') {
-                peer = new telegram_1.Api.InputPeerChat({
+                peer = new teledrive_client_1.Api.InputPeerChat({
                     chatId: (0, big_integer_1.default)(id)
                 });
             }
             else if (type === 'user') {
-                peer = new telegram_1.Api.InputPeerUser({
+                peer = new teledrive_client_1.Api.InputPeerUser({
                     userId: (0, big_integer_1.default)(id),
                     accessHash: (0, big_integer_1.default)(accessHash)
                 });
             }
             try {
-                yield req.tg.invoke(new telegram_1.Api.messages.ReadHistory({ peer }));
+                yield req.tg.invoke(new teledrive_client_1.Api.messages.ReadHistory({ peer }));
             }
             catch (error) {
-                yield req.tg.invoke(new telegram_1.Api.channels.ReadHistory({ channel: peer }));
+                yield req.tg.invoke(new teledrive_client_1.Api.channels.ReadHistory({ channel: peer }));
             }
             return res.status(202).send({ accepted: true });
         });
@@ -145,23 +145,23 @@ let Messages = class Messages {
             const { message, replyToMsgId } = req.body;
             let peer;
             if (type === 'channel') {
-                peer = new telegram_1.Api.InputPeerChannel({
+                peer = new teledrive_client_1.Api.InputPeerChannel({
                     channelId: (0, big_integer_1.default)(id),
                     accessHash: (0, big_integer_1.default)(accessHash)
                 });
             }
             else if (type === 'chat') {
-                peer = new telegram_1.Api.InputPeerChat({
+                peer = new teledrive_client_1.Api.InputPeerChat({
                     chatId: (0, big_integer_1.default)(id)
                 });
             }
             else if (type === 'user') {
-                peer = new telegram_1.Api.InputPeerUser({
+                peer = new teledrive_client_1.Api.InputPeerUser({
                     userId: (0, big_integer_1.default)(id),
                     accessHash: (0, big_integer_1.default)(accessHash)
                 });
             }
-            const result = yield req.tg.invoke(new telegram_1.Api.messages.SendMessage(Object.assign({ peer,
+            const result = yield req.tg.invoke(new teledrive_client_1.Api.messages.SendMessage(Object.assign({ peer,
                 message }, replyToMsgId ? { replyToMsgId: replyToMsgId } : {})));
             return res.send({ message: result });
         });
@@ -173,23 +173,23 @@ let Messages = class Messages {
             const { message } = req.body;
             let peer;
             if (type === 'channel') {
-                peer = new telegram_1.Api.InputPeerChannel({
+                peer = new teledrive_client_1.Api.InputPeerChannel({
                     channelId: (0, big_integer_1.default)(id),
                     accessHash: (0, big_integer_1.default)(accessHash)
                 });
             }
             else if (type === 'chat') {
-                peer = new telegram_1.Api.InputPeerChat({
+                peer = new teledrive_client_1.Api.InputPeerChat({
                     chatId: (0, big_integer_1.default)(id)
                 });
             }
             else if (type === 'user') {
-                peer = new telegram_1.Api.InputPeerUser({
+                peer = new teledrive_client_1.Api.InputPeerUser({
                     userId: (0, big_integer_1.default)(id),
                     accessHash: (0, big_integer_1.default)(accessHash)
                 });
             }
-            const result = yield req.tg.invoke(new telegram_1.Api.messages.EditMessage({
+            const result = yield req.tg.invoke(new teledrive_client_1.Api.messages.EditMessage({
                 id: Number(msgId),
                 peer,
                 message
@@ -203,27 +203,27 @@ let Messages = class Messages {
             const { accessHash } = req.query;
             let peer;
             if (type === 'channel') {
-                peer = new telegram_1.Api.InputPeerChannel({
+                peer = new teledrive_client_1.Api.InputPeerChannel({
                     channelId: (0, big_integer_1.default)(id),
                     accessHash: (0, big_integer_1.default)(accessHash)
                 });
             }
             else if (type === 'chat') {
-                peer = new telegram_1.Api.InputPeerChat({
+                peer = new teledrive_client_1.Api.InputPeerChat({
                     chatId: (0, big_integer_1.default)(id)
                 });
             }
             else if (type === 'user') {
-                peer = new telegram_1.Api.InputPeerUser({
+                peer = new teledrive_client_1.Api.InputPeerUser({
                     userId: (0, big_integer_1.default)(id),
                     accessHash: (0, big_integer_1.default)(accessHash)
                 });
             }
             try {
-                yield req.tg.invoke(new telegram_1.Api.messages.DeleteMessages({ id: [Number(msgId)], revoke: true }));
+                yield req.tg.invoke(new teledrive_client_1.Api.messages.DeleteMessages({ id: [Number(msgId)], revoke: true }));
             }
             catch (error) {
-                yield req.tg.invoke(new telegram_1.Api.channels.DeleteMessages({ id: [Number(msgId)], channel: peer }));
+                yield req.tg.invoke(new teledrive_client_1.Api.channels.DeleteMessages({ id: [Number(msgId)], channel: peer }));
             }
             return res.status(202).send({ accepted: true });
         });
@@ -238,18 +238,18 @@ let Messages = class Messages {
                 fromPeer = 'me';
             }
             else if (from.type === 'channel') {
-                fromPeer = new telegram_1.Api.InputPeerChannel({
+                fromPeer = new teledrive_client_1.Api.InputPeerChannel({
                     channelId: (0, big_integer_1.default)(from.id),
                     accessHash: (0, big_integer_1.default)(from.accessHash)
                 });
             }
             else if (from.type === 'chat') {
-                fromPeer = new telegram_1.Api.InputPeerChat({
+                fromPeer = new teledrive_client_1.Api.InputPeerChat({
                     chatId: (0, big_integer_1.default)(from.id)
                 });
             }
             else if (from.type === 'user') {
-                fromPeer = new telegram_1.Api.InputPeerUser({
+                fromPeer = new teledrive_client_1.Api.InputPeerUser({
                     userId: (0, big_integer_1.default)(from.id),
                     accessHash: (0, big_integer_1.default)(from.accessHash)
                 });
@@ -258,23 +258,23 @@ let Messages = class Messages {
                 toPeer = to;
             }
             else if (to.type === 'channel') {
-                toPeer = new telegram_1.Api.InputPeerChannel({
+                toPeer = new teledrive_client_1.Api.InputPeerChannel({
                     channelId: (0, big_integer_1.default)(to.id),
                     accessHash: (0, big_integer_1.default)(to.accessHash)
                 });
             }
             else if (to.type === 'chat') {
-                toPeer = new telegram_1.Api.InputPeerChat({
+                toPeer = new teledrive_client_1.Api.InputPeerChat({
                     chatId: (0, big_integer_1.default)(to.id)
                 });
             }
             else if (to.type === 'user') {
-                toPeer = new telegram_1.Api.InputPeerUser({
+                toPeer = new teledrive_client_1.Api.InputPeerUser({
                     userId: (0, big_integer_1.default)(to.id),
                     accessHash: (0, big_integer_1.default)(to.accessHash)
                 });
             }
-            const result = yield req.tg.invoke(new telegram_1.Api.messages.ForwardMessages({
+            const result = yield req.tg.invoke(new teledrive_client_1.Api.messages.ForwardMessages({
                 id: [Number(msgId)],
                 fromPeer,
                 toPeer,
@@ -289,10 +289,10 @@ let Messages = class Messages {
             if (!q) {
                 throw { status: 400, body: { error: 'q is required' } };
             }
-            const messages = yield req.tg.invoke(new telegram_1.Api.messages.Search({
+            const messages = yield req.tg.invoke(new teledrive_client_1.Api.messages.Search({
                 q: q,
-                filter: new telegram_1.Api.InputMessagesFilterEmpty(),
-                peer: new telegram_1.Api.InputPeerEmpty(),
+                filter: new teledrive_client_1.Api.InputMessagesFilterEmpty(),
+                peer: new teledrive_client_1.Api.InputPeerEmpty(),
                 limit: Number(limit) || 0,
                 minDate: 0,
                 maxDate: 0,
@@ -311,10 +311,10 @@ let Messages = class Messages {
             if (!q) {
                 throw { status: 400, body: { error: 'q is required' } };
             }
-            const messages = yield req.tg.invoke(new telegram_1.Api.messages.SearchGlobal({
+            const messages = yield req.tg.invoke(new teledrive_client_1.Api.messages.SearchGlobal({
                 q: q,
-                filter: new telegram_1.Api.InputMessagesFilterEmpty(),
-                offsetPeer: new telegram_1.Api.InputPeerEmpty(),
+                filter: new teledrive_client_1.Api.InputMessagesFilterEmpty(),
+                offsetPeer: new teledrive_client_1.Api.InputPeerEmpty(),
                 limit: Number(limit) || 0
             }));
             return res.send({ messages });
@@ -325,18 +325,18 @@ let Messages = class Messages {
             const { type, id } = req.params;
             let peer;
             if (type === 'channel') {
-                peer = new telegram_1.Api.InputPeerChannel({
+                peer = new teledrive_client_1.Api.InputPeerChannel({
                     channelId: (0, big_integer_1.default)(id),
                     accessHash: (0, big_integer_1.default)(req.query.accessHash)
                 });
             }
             else if (type === 'chat') {
-                peer = new telegram_1.Api.InputPeerChat({
+                peer = new teledrive_client_1.Api.InputPeerChat({
                     chatId: (0, big_integer_1.default)(id)
                 });
             }
             else if (type === 'user') {
-                peer = new telegram_1.Api.InputPeerUser({
+                peer = new teledrive_client_1.Api.InputPeerUser({
                     userId: (0, big_integer_1.default)(id),
                     accessHash: (0, big_integer_1.default)(req.query.accessHash)
                 });
@@ -353,7 +353,6 @@ let Messages = class Messages {
                 return res.end();
             }
             catch (error) {
-                console.error(error);
                 return res.redirect('https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png');
             }
         });

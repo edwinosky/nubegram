@@ -65,6 +65,7 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
   const [scrollTop, setScrollTop] = useState<number>(0)
   const [fileList, setFileList] = useState<any[]>([])
   const [loading, setLoading] = useState<boolean>()
+  const [loadingSync, setLoadingSync] = useState<boolean>()
   const [syncConfirmation, setSyncConfirmation] = useState<boolean>()
   const [collapsedMessaging, setCollapsedMessaging] = useState<boolean>(true)
   const [collapsedView, setCollapsedView] = useState<string>()
@@ -103,7 +104,13 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
   } })
 
   useEffect(() => {
+    // init config
+    req.get('/config')
+  }, [])
+
+  useEffect(() => {
     if (errorMe) {
+      window.localStorage.clear()
       history.replace('/login')
     }
   }, [errorMe])
@@ -281,6 +288,7 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
   }
 
   const sync = async () => {
+    setLoadingSync(true)
     try {
       await req.post('/files/sync', {}, {
         params: {
@@ -289,7 +297,9 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
         }
       })
       refetch()
+      setLoadingSync(false)
     } catch (error: any) {
+      setLoadingSync(false)
       if (error?.response?.status === 402) {
         return notification.error({
           message: 'Premium Feature',
@@ -316,7 +326,7 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
           history.push(`${window.location.pathname}?${searchParams.toString()}`)
         }
       }}>
-        <Row style={{ minHeight: '90vh', marginBottom: '100px', padding: '0 12px' }}>
+        <Row style={{ minHeight: '100vh', marginBottom: '100px', padding: '0 12px' }}>
           <Col xxl={{ span: 14, offset: 5 }} xl={{ span: 16, offset: 4 }} lg={{ span: 18, offset: 3 }} md={{ span: 20, offset: 2 }} span={24}>
             <Typography.Paragraph>
               <Menu mode="horizontal" selectedKeys={[params?.shared ? 'shared' : 'mine']} onClick={({ key }) => changeTab(key)}>
@@ -330,13 +340,14 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
                 onCancel={file => setSelectDeleted([file])}
                 parent={parent}
                 dataFileList={[fileList, setFileList]}
-              /> : <Alert
+              /> : !sessionStorage.getItem('hide-shared-warning') && <Alert
                 message={<>
                   These are all files that other users share with you. If you find any suspicious, spam, or etc, please <Link to="/contact?intent=report">report it to us</Link>.
                 </>}
                 type="warning"
                 showIcon
-                closable/>}
+                onClose={() => sessionStorage.setItem('hide-shared-warning', 'true')}
+                closable />}
             </Typography.Paragraph>
             <Typography.Paragraph style={{ float: 'left' }}>
               <Breadcrumb dataSource={[breadcrumbs, setBreadcrumbs]} dataParent={[parent, setParent]} />
@@ -398,9 +409,11 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
                     setSelected([])
                   }
                 } else {
-                  const searchParams = new URLSearchParams(window.location.search)
-                  searchParams.set('view', row.id)
-                  history.push(`${window.location.pathname}?${searchParams.toString()}`)
+                  // const searchParams = new URLSearchParams(window.location.search)
+                  // searchParams.set('view', row.id)
+                  // history.push(`${window.location.pathname}?${searchParams.toString()}`)
+                  window.open(`${window.location.origin}/view/${row.id}`, '_blank')
+
                   // setCollapsedView(row.id)
                 }
               }}
@@ -472,9 +485,9 @@ const Dashboard: React.FC<PageProps & { me?: any, errorMe?: any }> = ({ match })
       onCancel={() => setSyncConfirmation(false)}
       onOk={sync}
       cancelButtonProps={{ shape: 'round' }}
-      okButtonProps={{ shape: 'round' }}>
+      okButtonProps={{ shape: 'round', loading: loadingSync }}>
         <Typography.Paragraph>
-          Are you sure to sync up to 50 files from your Saved Messages to the <code>{typeof parent?.name === 'string' ? parent.name : 'root'}</code> directory?
+          Are you sure to sync up to 50 files from your Upload Destination to the <code>{typeof parent?.name === 'string' ? parent.name : 'root'}</code> directory?
         </Typography.Paragraph>
       </Modal>
 

@@ -24,6 +24,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Subscriptions = void 0;
 const uuid_random_1 = __importDefault(require("uuid-random"));
 const Users_1 = require("../../model/entities/Users");
+const Cache_1 = require("../../service/Cache");
 const Midtrans_1 = require("../../service/Midtrans");
 const PayPal_1 = require("../../service/PayPal");
 const Endpoint_1 = require("../base/Endpoint");
@@ -48,7 +49,8 @@ let Subscriptions = class Subscriptions {
                 if (req.body.email) {
                     req.user.email = req.body.email;
                 }
-                yield req.user.save();
+                yield Users_1.Users.update(req.user.id, req.user);
+                yield Cache_1.Redis.connect().del(`auth:${req.authKey}`);
                 const result = yield new Midtrans_1.Midtrans().getPaymentLink(req.user, 144000);
                 return res.send({ link: result.redirect_url });
             }
@@ -63,6 +65,7 @@ let Subscriptions = class Subscriptions {
             }
             const result = yield new PayPal_1.PayPal().createSubscription(req.user);
             yield Users_1.Users.update(req.user.id, { subscription_id: result.id });
+            yield Cache_1.Redis.connect().del(`auth:${req.authKey}`);
             return res.send({ link: result.links.find(link => link.rel === 'approve').href });
         });
     }

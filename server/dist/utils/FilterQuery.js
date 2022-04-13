@@ -48,7 +48,7 @@ function filterQuery(base, query) {
     });
 }
 exports.filterQuery = filterQuery;
-function buildWhereQuery(data, prefix = '') {
+function buildWhereQuery(data, prefix = '', join = 'and') {
     const res = Object.keys(data).reduce((res, key) => {
         let item = '';
         const [column, op] = key.split(/(.+)\./).filter(Boolean);
@@ -93,7 +93,7 @@ function buildWhereQuery(data, prefix = '') {
             item = `${prefix}${column} ${op} ${value.trim()}`;
         }
         return [...res, item];
-    }, []).join(' and ');
+    }, []).join(` ${join} `);
     return res;
 }
 exports.buildWhereQuery = buildWhereQuery;

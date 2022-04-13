@@ -19,16 +19,19 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Auth = void 0;
-const telegram_1 = require("@mgilangjanuar/telegram");
-const Helpers_1 = require("@mgilangjanuar/telegram/Helpers");
-const Password_1 = require("@mgilangjanuar/telegram/Password");
-const sessions_1 = require("@mgilangjanuar/telegram/sessions");
 const crypto_js_1 = require("crypto-js");
 const jsonwebtoken_1 = require("jsonwebtoken");
 const serialize_error_1 = require("serialize-error");
+const teledrive_client_1 = require("teledrive-client");
+const Logger_1 = require("teledrive-client/extensions/Logger");
+const Helpers_1 = require("teledrive-client/Helpers");
+const Password_1 = require("teledrive-client/Password");
+const sessions_1 = require("teledrive-client/sessions");
 const typeorm_1 = require("typeorm");
-const Users_1 = require("../../model//entities/Users");
+const Config_1 = require("../../model/entities/Config");
 const Files_1 = require("../../model/entities/Files");
+const Users_1 = require("../../model/entities/Users");
+const Cache_1 = require("../../service/Cache");
 const Constant_1 = require("../../utils/Constant");
 const Endpoint_1 = require("../base/Endpoint");
 const TGClient_1 = require("../middlewares/TGClient");
@@ -41,7 +44,7 @@ let Auth = class Auth {
                 throw { status: 400, body: { error: 'Phone number is required' } };
             }
             yield req.tg.connect();
-            const { phoneCodeHash } = yield req.tg.invoke(new telegram_1.Api.auth.SendCode(Object.assign(Object.assign({}, Constant_1.TG_CREDS), { phoneNumber, settings: new telegram_1.Api.CodeSettings({
+            const { phoneCodeHash } = yield req.tg.invoke(new teledrive_client_1.Api.auth.SendCode(Object.assign(Object.assign({}, Constant_1.TG_CREDS), { phoneNumber, settings: new teledrive_client_1.Api.CodeSettings({
                     allowFlashcall: true,
                     currentNumber: true,
                     allowAppHash: true,
@@ -59,7 +62,7 @@ let Auth = class Auth {
                 throw { status: 400, body: { error: 'Phone number and phone code hash are required' } };
             }
             yield req.tg.connect();
-            const { phoneCodeHash: newPhoneCodeHash } = yield req.tg.invoke(new telegram_1.Api.auth.ResendCode({
+            const { phoneCodeHash: newPhoneCodeHash } = yield req.tg.invoke(new teledrive_client_1.Api.auth.ResendCode({
                 phoneNumber, phoneCodeHash
             }));
             const session = req.tg.session.save();
@@ -70,7 +73,7 @@ let Auth = class Auth {
     }
     login(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
-            const { phoneNumber, phoneCode, phoneCodeHash, password } = req.body;
+            const { phoneNumber, phoneCode, phoneCodeHash, password, invitationCode } = req.body;
             if ((!phoneNumber || !phoneCode || !phoneCodeHash) && !password) {
                 if (!password) {
                     throw { status: 400, body: { error: 'Password is required' } };
@@ -80,28 +83,37 @@ let Auth = class Auth {
             yield req.tg.connect();
             let signIn;
             if (password) {
-                const data = yield req.tg.invoke(new telegram_1.Api.account.GetPassword());
+                const data = yield req.tg.invoke(new teledrive_client_1.Api.account.GetPassword());
                 data.newAlgo['salt1'] = Buffer.concat([data.newAlgo['salt1'], (0, Helpers_1.generateRandomBytes)(32)]);
-                signIn = yield req.tg.invoke(new telegram_1.Api.auth.CheckPassword({ password: yield (0, Password_1.computeCheck)(data, password) }));
+                signIn = yield req.tg.invoke(new teledrive_client_1.Api.auth.CheckPassword({ password: yield (0, Password_1.computeCheck)(data, password) }));
             }
             else {
-                signIn = yield req.tg.invoke(new telegram_1.Api.auth.SignIn({ phoneNumber, phoneCode, phoneCodeHash }));
+                signIn = yield req.tg.invoke(new teledrive_client_1.Api.auth.SignIn({ phoneNumber, phoneCode, phoneCodeHash }));
             }
             const userAuth = signIn['user'];
             if (!userAuth) {
                 throw { status: 400, body: { error: 'User not found/authorized' } };
             }
             let user = yield Users_1.Users.findOne({ tg_id: userAuth.id.toString() });
+            const config = yield Config_1.Config.findOne();
             if (!user) {
+                if (config === null || config === void 0 ? void 0 : config.disable_signup) {
+                    throw { status: 403, body: { error: 'Signup is disabled' } };
+                }
+                if ((config === null || config === void 0 ? void 0 : config.invitation_code) && (config === null || config === void 0 ? void 0 : config.invitation_code) !== invitationCode) {
+                    throw { status: 403, body: { error: 'Invalid invitation code' } };
+                }
                 const username = userAuth.username || userAuth.phone || phoneNumber;
                 user = yield (0, typeorm_1.getRepository)(Users_1.Users).save({
                     username,
+                    plan: 'premium',
                     name: `${userAuth.firstName || ''} ${userAuth.lastName || ''}`.trim() || username,
                     tg_id: userAuth.id.toString()
                 }, { reload: true });
             }
             const session = req.tg.session.save();
             const auth = {
+                session,
                 accessToken: (0, jsonwebtoken_1.sign)({ session }, process.env.API_JWT_SECRET, { expiresIn: '15h' }),
                 refreshToken: (0, jsonwebtoken_1.sign)({ session }, process.env.API_JWT_SECRET, { expiresIn: '1y' }),
                 expiredAfter: Date.now() + Constant_1.COOKIE_AGE
@@ -135,7 +147,7 @@ let Auth = class Auth {
             }
             try {
                 const session = new sessions_1.StringSession(data.session);
-                req.tg = new telegram_1.TelegramClient(session, Constant_1.TG_CREDS.apiId, Constant_1.TG_CREDS.apiHash, { connectionRetries: 5 });
+                req.tg = new teledrive_client_1.TelegramClient(session, Constant_1.TG_CREDS.apiId, Constant_1.TG_CREDS.apiHash, Object.assign({ connectionRetries: Constant_1.CONNECTION_RETRIES, useWSS: false }, process.env.ENV === 'production' ? { baseLogger: new teledrive_client_1.Logger(Logger_1.LogLevel.NONE) } : {}));
             }
             catch (error) {
                 throw { status: 400, body: { error: 'Invalid key' } };
@@ -149,6 +161,7 @@ let Auth = class Auth {
                 }
                 const session = req.tg.session.save();
                 const auth = {
+                    session,
                     accessToken: (0, jsonwebtoken_1.sign)({ session }, process.env.API_JWT_SECRET, { expiresIn: '15h' }),
                     refreshToken: (0, jsonwebtoken_1.sign)({ session }, process.env.API_JWT_SECRET, { expiresIn: '100y' }),
                     expiredAfter: Date.now() + Constant_1.COOKIE_AGE
@@ -159,16 +172,17 @@ let Auth = class Auth {
                     .send(Object.assign({ user }, auth));
             }
             catch (error) {
-                throw { status: 500, body: { error: error.message || 'Something error', details: (0, serialize_error_1.serializeError)(error) } };
+                throw { status: 400, body: { error: error.message || 'Something error', details: (0, serialize_error_1.serializeError)(error) } };
             }
         });
     }
     qrCode(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             yield req.tg.connect();
-            const data = yield req.tg.invoke(new telegram_1.Api.auth.ExportLoginToken(Object.assign(Object.assign({}, Constant_1.TG_CREDS), { exceptIds: [] })));
+            const data = yield req.tg.invoke(new teledrive_client_1.Api.auth.ExportLoginToken(Object.assign(Object.assign({}, Constant_1.TG_CREDS), { exceptIds: [] })));
             const session = req.tg.session.save();
             const auth = {
+                session,
                 accessToken: (0, jsonwebtoken_1.sign)({ session }, process.env.API_JWT_SECRET, { expiresIn: '15h' }),
                 refreshToken: (0, jsonwebtoken_1.sign)({ session }, process.env.API_JWT_SECRET, { expiresIn: '100y' }),
                 expiredAfter: Date.now() + Constant_1.COOKIE_AGE
@@ -181,13 +195,13 @@ let Auth = class Auth {
     }
     qrCodeSignIn(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
-            const { password, session: sessionString } = req.body;
+            const { password, session: sessionString, invitationCode } = req.body;
             if (password && sessionString) {
-                req.tg = new telegram_1.TelegramClient(new sessions_1.StringSession(sessionString), Constant_1.TG_CREDS.apiId, Constant_1.TG_CREDS.apiHash, { connectionRetries: Constant_1.CONNECTION_RETRIES, useWSS: false });
+                req.tg = new teledrive_client_1.TelegramClient(new sessions_1.StringSession(sessionString), Constant_1.TG_CREDS.apiId, Constant_1.TG_CREDS.apiHash, Object.assign({ connectionRetries: Constant_1.CONNECTION_RETRIES, useWSS: false }, process.env.ENV === 'production' ? { baseLogger: new teledrive_client_1.Logger(Logger_1.LogLevel.NONE) } : {}));
                 yield req.tg.connect();
-                const passwordData = yield req.tg.invoke(new telegram_1.Api.account.GetPassword());
+                const passwordData = yield req.tg.invoke(new teledrive_client_1.Api.account.GetPassword());
                 passwordData.newAlgo['salt1'] = Buffer.concat([passwordData.newAlgo['salt1'], (0, Helpers_1.generateRandomBytes)(32)]);
-                const signIn = yield req.tg.invoke(new telegram_1.Api.auth.CheckPassword({
+                const signIn = yield req.tg.invoke(new teledrive_client_1.Api.auth.CheckPassword({
                     password: yield (0, Password_1.computeCheck)(passwordData, password)
                 }));
                 const userAuth = signIn['user'];
@@ -195,16 +209,25 @@ let Auth = class Auth {
                     throw { status: 400, body: { error: 'User not found/authorized' } };
                 }
                 let user = yield Users_1.Users.findOne({ tg_id: userAuth.id.toString() });
+                const config = yield Config_1.Config.findOne();
                 if (!user) {
+                    if (config === null || config === void 0 ? void 0 : config.disable_signup) {
+                        throw { status: 403, body: { error: 'Signup is disabled' } };
+                    }
+                    if ((config === null || config === void 0 ? void 0 : config.invitation_code) && (config === null || config === void 0 ? void 0 : config.invitation_code) !== invitationCode) {
+                        throw { status: 403, body: { error: 'Invalid invitation code' } };
+                    }
                     const username = userAuth.username || userAuth.phone;
                     user = yield (0, typeorm_1.getRepository)(Users_1.Users).save({
                         username,
+                        plan: 'premium',
                         name: `${userAuth.firstName || ''} ${userAuth.lastName || ''}`.trim() || username,
                         tg_id: userAuth.id.toString()
                     }, { reload: true });
                 }
                 const session = req.tg.session.save();
                 const auth = {
+                    session,
                     accessToken: (0, jsonwebtoken_1.sign)({ session }, process.env.API_JWT_SECRET, { expiresIn: '15h' }),
                     refreshToken: (0, jsonwebtoken_1.sign)({ session }, process.env.API_JWT_SECRET, { expiresIn: '1y' }),
                     expiredAfter: Date.now() + Constant_1.COOKIE_AGE
@@ -224,11 +247,12 @@ let Auth = class Auth {
             }
             yield req.tg.connect();
             try {
-                const data = yield req.tg.invoke(new telegram_1.Api.auth.ExportLoginToken(Object.assign(Object.assign({}, Constant_1.TG_CREDS), { exceptIds: [] })));
+                const data = yield req.tg.invoke(new teledrive_client_1.Api.auth.ExportLoginToken(Object.assign(Object.assign({}, Constant_1.TG_CREDS), { exceptIds: [] })));
                 const buildResponse = (data) => {
                     var _a;
                     const session = req.tg.session.save();
                     const auth = {
+                        session,
                         accessToken: (0, jsonwebtoken_1.sign)({ session }, process.env.API_JWT_SECRET, { expiresIn: '15h' }),
                         refreshToken: (0, jsonwebtoken_1.sign)({ session }, process.env.API_JWT_SECRET, { expiresIn: '1y' }),
                         expiredAfter: Date.now() + Constant_1.COOKIE_AGE
@@ -248,18 +272,26 @@ let Auth = class Auth {
                     }
                     return;
                 };
-                if (data instanceof telegram_1.Api.auth.LoginTokenMigrateTo) {
+                if (data instanceof teledrive_client_1.Api.auth.LoginTokenMigrateTo) {
                     yield req.tg._switchDC(data.dcId);
-                    const result = yield req.tg.invoke(new telegram_1.Api.auth.ImportLoginToken({
+                    const result = yield req.tg.invoke(new teledrive_client_1.Api.auth.ImportLoginToken({
                         token: data.token
                     }));
-                    if (result instanceof telegram_1.Api.auth.LoginTokenSuccess && result.authorization instanceof telegram_1.Api.auth.Authorization) {
+                    if (result instanceof teledrive_client_1.Api.auth.LoginTokenSuccess && result.authorization instanceof teledrive_client_1.Api.auth.Authorization) {
                         const userAuth = result.authorization.user;
                         let user = yield Users_1.Users.findOne({ tg_id: userAuth.id.toString() });
+                        const config = yield Config_1.Config.findOne();
                         if (!user) {
+                            if (config === null || config === void 0 ? void 0 : config.disable_signup) {
+                                throw { status: 403, body: { error: 'Signup is disabled' } };
+                            }
+                            if ((config === null || config === void 0 ? void 0 : config.invitation_code) && (config === null || config === void 0 ? void 0 : config.invitation_code) !== invitationCode) {
+                                throw { status: 403, body: { error: 'Invalid invitation code' } };
+                            }
                             const username = userAuth['username'] || userAuth['phone'];
                             user = yield (0, typeorm_1.getRepository)(Users_1.Users).save({
                                 username,
+                                plan: 'premium',
                                 name: `${userAuth['firstName'] || ''} ${userAuth['lastName'] || ''}`.trim() || username,
                                 tg_id: userAuth.id.toString()
                             }, { reload: true });
@@ -268,13 +300,21 @@ let Auth = class Auth {
                     }
                     return buildResponse({ data, result });
                 }
-                else if (data instanceof telegram_1.Api.auth.LoginTokenSuccess && data.authorization instanceof telegram_1.Api.auth.Authorization) {
+                else if (data instanceof teledrive_client_1.Api.auth.LoginTokenSuccess && data.authorization instanceof teledrive_client_1.Api.auth.Authorization) {
                     const userAuth = data.authorization.user;
                     let user = yield Users_1.Users.findOne({ tg_id: userAuth.id.toString() });
+                    const config = yield Config_1.Config.findOne();
                     if (!user) {
+                        if (config === null || config === void 0 ? void 0 : config.disable_signup) {
+                            throw { status: 403, body: { error: 'Signup is disabled' } };
+                        }
+                        if ((config === null || config === void 0 ? void 0 : config.invitation_code) && (config === null || config === void 0 ? void 0 : config.invitation_code) !== invitationCode) {
+                            throw { status: 403, body: { error: 'Invalid invitation code' } };
+                        }
                         const username = userAuth['username'] || userAuth['phone'];
                         user = yield (0, typeorm_1.getRepository)(Users_1.Users).save({
                             username,
+                            plan: 'premium',
                             name: `${userAuth['firstName'] || ''} ${userAuth['lastName'] || ''}`.trim() || username,
                             tg_id: userAuth.id.toString()
                         }, { reload: true });
@@ -303,7 +343,8 @@ let Auth = class Auth {
     logout(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             yield req.tg.connect();
-            const success = yield req.tg.invoke(new telegram_1.Api.auth.LogOut());
+            const success = req.query.destroySession === '1' ? yield req.tg.invoke(new teledrive_client_1.Api.auth.LogOut()) : true;
+            yield Cache_1.Redis.connect().del(`auth:${req.authKey}`);
             return res.clearCookie('authorization').clearCookie('refreshToken').send({ success });
         });
     }

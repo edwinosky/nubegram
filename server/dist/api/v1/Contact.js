@@ -24,15 +24,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Contact = void 0;
 const axios_1 = __importDefault(require("axios"));
 const Users_1 = require("../../model/entities/Users");
+const StringParser_1 = require("../../utils/StringParser");
 const Endpoint_1 = require("../base/Endpoint");
 let Contact = class Contact {
     send(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
-            const { from, message } = req.body;
+            const { email, from, message } = req.body;
             const user = yield Users_1.Users.createQueryBuilder('users').select(['users.subscription_id', 'users.midtrans_id', 'users.plan']).where({ username: from }).getOne();
             yield axios_1.default.post(`https://api.telegram.org/bot${process.env.TG_BOT_TOKEN}/sendMessage`, {
                 chat_id: process.env.TG_BOT_OWNER_ID,
-                text: `🛎 @${from} wants to contact you!\n\n${message}\n\nfrom: \`${req.headers['cf-connecting-ip'] || req.ip}\` \`${req.headers['authority'] || req.headers.origin}\`${user ? `\nplan: ${user.plan}${user.subscription_id ? `\npaypal: ${user.subscription_id}` : ''}${user.midtrans_id ? `\nmidtrans: ${user.midtrans_id}` : ''}` : ''}`,
+                text: `🛎 @${(0, StringParser_1.markdownSafe)(from)} wants to contact you!\n\n${(0, StringParser_1.markdownSafe)(message)}\n\nfrom: \`${(0, StringParser_1.markdownSafe)(req.headers['cf-connecting-ip'] || req.ip)}\`\nemail: \`${(0, StringParser_1.markdownSafe)(email)}\`\ndomain: \`${req.headers['authority'] || req.headers.origin}\`${user ? `\nplan: ${user === null || user === void 0 ? void 0 : user.plan}${(user === null || user === void 0 ? void 0 : user.subscription_id) ? `\npaypal: ${user === null || user === void 0 ? void 0 : user.subscription_id}` : ''}${(user === null || user === void 0 ? void 0 : user.midtrans_id) ? `\nmidtrans: ${user === null || user === void 0 ? void 0 : user.midtrans_id}` : ''}` : ''}`,
                 parse_mode: 'Markdown'
             });
             return res.send({ success: true });

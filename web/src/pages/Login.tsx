@@ -1,7 +1,8 @@
-import { ArrowRightOutlined, CheckCircleTwoTone, GlobalOutlined, LoginOutlined } from '@ant-design/icons'
-import { Button, Card, Col, Collapse, Form, Input, Layout, notification, Row, Spin, Steps, Typography } from 'antd'
+import { ArrowRightOutlined, LoginOutlined } from '@ant-design/icons'
+import { Button, Card, Col, Form, Input, Layout, notification, Row, Spin, Steps, Typography } from 'antd'
 import CountryPhoneInput, { ConfigProvider } from 'antd-country-phone-input'
 import { useForm } from 'antd/lib/form/Form'
+import base64url from 'base64url'
 import JSCookie from 'js-cookie'
 import React, { useEffect, useState } from 'react'
 import { useThemeSwitcher } from 'react-css-theme-switcher'
@@ -9,8 +10,12 @@ import OtpInput from 'react-otp-input'
 import QRCode from 'react-qr-code'
 import { useHistory } from 'react-router'
 import useSWRImmutable from 'swr/immutable'
+import { Api } from 'teledrive-client'
+import { generateRandomBytes } from 'teledrive-client/Helpers'
+import { computeCheck } from 'teledrive-client/Password'
 import en from 'world_countries_lists/data/en/world.json'
 import { fetcher, req } from '../utils/Fetcher'
+import { anonymousTelegramClient, telegramClient } from '../utils/Telegram'
 
 interface Props {
   me?: any
@@ -20,7 +25,6 @@ const Login: React.FC<Props> = ({ me }) => {
   const history = useHistory()
   const [formLogin] = useForm()
   const [formLoginQRCode] = useForm()
-  const [dc, setDc] = useState<string>()
   const [currentStep, setCurrentStep] = useState<number>(0)
   const [phoneData, setPhoneData] = useState<{ phone?: string, code?: number, short?: string }>({})
   const [otp, setOtp] = useState<string>()
@@ -31,21 +35,13 @@ const Login: React.FC<Props> = ({ me }) => {
   const [needPassword, setNeedPassword] = useState<boolean>()
   const [method, setMethod] = useState<'phoneNumber' | 'qrCode'>('phoneNumber')
   const { data: _ } = useSWRImmutable('/utils/ipinfo', fetcher, { onSuccess: ({ ipinfo }) => setPhoneData(phoneData?.short ? phoneData : { short: ipinfo?.country || 'ID' }) })
-  const [qrCode, setQrCode] = useState<{ loginToken: string, accessToken: string, session?: string }>()
+  const [qrCode, setQrCode] = useState<{ loginToken: string, accessToken?: string, session?: string }>()
   const { currentTheme } = useThemeSwitcher()
 
-  useEffect(() => {
-    if (window.location.host === 'ge.teledriveapp.com') {
-      setDc('ge')
-      localStorage.setItem('dc', 'ge')
-    } else if (window.location.host === 'us.teledriveapp.com') {
-      setDc('us')
-      localStorage.setItem('dc', 'us')
-    } else {
-      setDc('sg')
-      localStorage.setItem('dc', 'sg')
-    }
-  }, [])
+  // useEffect(() => {
+  //   // init config
+  //   req.get('/config')
+  // }, [])
 
   const sendCode = async (phoneNumber?: string) => {
     phoneNumber = phoneNumber || phoneData.phone ? `+${phoneData.code}${phoneData.phone}` : ''
@@ -57,7 +53,35 @@ const Login: React.FC<Props> = ({ me }) => {
     }
 
     const fetch = async (phoneCodeHash?: string) => {
-      const { data } = phoneCodeHash ? await req.post('/auth/reSendCode', { phoneNumber, phoneCodeHash }) : await req.post('/auth/sendCode', { phoneNumber })
+      let data: any = null
+      if (localStorage.getItem('experimental')) {
+        const client = await anonymousTelegramClient.connect()
+        if (phoneCodeHash) {
+          const { phoneCodeHash: newPhoneCodeHash } = await client.invoke(new Api.auth.ResendCode({
+            phoneNumber, phoneCodeHash }))
+          const session = client.session.save() as any
+          localStorage.setItem('session', session)
+          data = { phoneCodeHash: newPhoneCodeHash }
+        } else {
+          const { phoneCodeHash } = await client.invoke(new Api.auth.SendCode({
+            apiId: Number(process.env.REACT_APP_TG_API_ID),
+            apiHash: process.env.REACT_APP_TG_API_HASH,
+            phoneNumber,
+            settings: new Api.CodeSettings({
+              allowFlashcall: true,
+              currentNumber: true,
+              allowAppHash: true,
+            })
+          }))
+          const session = client.session.save() as any
+          localStorage.setItem('session', session)
+          data = { phoneCodeHash }
+        }
+      } else {
+        const invitationCode = location.search.replace('?code=', '')
+        const resp = phoneCodeHash ? await req.post('/auth/reSendCode', { phoneNumber, phoneCodeHash, invitationCode }) : await req.post('/auth/sendCode', { phoneNumber, invitationCode })
+        data = resp.data
+      }
       setPhoneCodeHash(data.phoneCodeHash)
       setCountdown(170)
       notification.info({
@@ -75,9 +99,9 @@ const Login: React.FC<Props> = ({ me }) => {
       setLoadingSendCode(false)
       notification.error({
         message: 'Error',
-        description: error?.response?.data?.error || 'Something error'
+        description: error?.response?.data?.error || error.message || 'Something error'
       })
-      if (error?.response?.status === 400) {
+      if (error?.status === 400 || error?.response?.status === 400) {
         await fetch()
       }
     }
@@ -92,9 +116,36 @@ const Login: React.FC<Props> = ({ me }) => {
     const phoneCode = otp
     const { password } = formLogin.getFieldsValue()
     try {
-      const { data } = await req.post('/auth/login', { ...needPassword ? { password } : { phoneNumber, phoneCode, phoneCodeHash } })
+      let data: any = null
+      if (localStorage.getItem('experimental')) {
+        const client = await anonymousTelegramClient.connect()
+        let signIn: any
+        if (password) {
+          const dataLogin = await client.invoke(new Api.account.GetPassword())
+          dataLogin.newAlgo['salt1'] = Buffer.concat([dataLogin.newAlgo['salt1'], generateRandomBytes(32)])
+          signIn = await client.invoke(new Api.auth.CheckPassword({ password: await computeCheck(dataLogin, password) }))
+        } else {
+          signIn = await client.invoke(new Api.auth.SignIn({ phoneNumber, phoneCode, phoneCodeHash }))
+        }
+        const userAuth = signIn['user']
+        if (!userAuth) {
+          return notification.error({ message: 'User not found/authorized' })
+        }
+        const session = client.session.save() as any
+        localStorage.setItem('session', session)
+        try {
+          const resp = await req.get('/users/me')
+          data = resp?.data
+        } catch (error) {
+          // ignore
+        }
+      } else {
+        const invitationCode = location.search.replace('?code=', '')
+        const resp = await req.post('/auth/login', { ...needPassword ? { password, invitationCode } : { phoneNumber, phoneCode, phoneCodeHash, invitationCode } })
+        data = resp.data
+      }
       try {
-        req.post('/users/me/paymentSync')
+        // req.post('/users/me/paymentSync')
         if (localStorage.getItem('files')) {
           notification.info({
             key: 'sync',
@@ -122,11 +173,18 @@ const Login: React.FC<Props> = ({ me }) => {
         message: 'Success',
         description: `Welcome back, ${data.user.name || data.user.username}! Please wait a moment...`
       })
-      return history.replace('/dashboard')
+      if (localStorage.getItem('experimental')) {
+        window.close()
+      } else {
+        history.replace('/dashboard')
+      }
     } catch (error: any) {
       setLoadingLogin(false)
-      const { data } = error?.response
-      if (data?.details?.errorMessage === 'SESSION_PASSWORD_NEEDED') {
+      let errorMessage = error?.errorMessage
+      if (error.response && error.response.data) {
+        errorMessage = error.response.data.details?.errorMessage
+      }
+      if (errorMessage === 'SESSION_PASSWORD_NEEDED') {
         notification.info({
           message: 'Info',
           description: 'Please input your 2FA password'
@@ -136,18 +194,100 @@ const Login: React.FC<Props> = ({ me }) => {
       }
       return notification.error({
         message: 'Error',
-        description: data?.error || 'Something error'
+        description: error?.response?.data?.error || error.message || 'Something error'
       })
     }
+  }
+
+  const _qrCodeSignIn = async (password?: string) => {
+    let data: any = null
+    const sessionString = qrCode?.session
+    if (password && sessionString) {
+      const client = await telegramClient.connect(sessionString || '')
+      const passwordData = await client.invoke(new Api.account.GetPassword())
+
+      passwordData.newAlgo['salt1'] = Buffer.concat([passwordData.newAlgo['salt1'], generateRandomBytes(32)])
+      const signIn = await client.invoke(new Api.auth.CheckPassword({
+        password: await computeCheck(passwordData, password)
+      }))
+
+      const userAuth = signIn['user']
+      if (!userAuth) {
+        throw { status: 400, body: { error: 'User not found/authorized' } }
+      }
+
+      const session = client.session.save() as any
+      localStorage.setItem('session', session)
+      const resp = await req.get('/users/me')
+      data = resp.data
+    } else {
+      // handle the second call for export login token, result case: success, need to migrate to other dc, or 2fa
+      const client = await telegramClient.connect(sessionString || '')
+      try {
+        const dataLogin = await client.invoke(new Api.auth.ExportLoginToken({
+          apiId: Number(process.env.REACT_APP_TG_API_ID),
+          apiHash: process.env.REACT_APP_TG_API_HASH,
+          exceptIds: []
+        }))
+
+        // handle to switch dc
+        if (dataLogin instanceof Api.auth.LoginTokenMigrateTo) {
+          await client._switchDC(dataLogin.dcId)
+          const result = await client.invoke(new Api.auth.ImportLoginToken({
+            token: dataLogin.token
+          }))
+
+          // result import login token success
+          if (result instanceof Api.auth.LoginTokenSuccess && result.authorization instanceof Api.auth.Authorization) {
+            const userAuth = result.authorization.user
+            if (userAuth) {
+              const session = client.session.save() as any
+              localStorage.setItem('session', session)
+              const resp = await req.get('/users/me')
+              data = resp.data
+            } else {
+              // ignore
+            }
+          } else {
+            // ignore
+          }
+
+          // handle if success
+        } else if (dataLogin instanceof Api.auth.LoginTokenSuccess && (dataLogin as any).authorization instanceof Api.auth.Authorization) {
+          const userAuth = (dataLogin as any).authorization.user
+          if (userAuth) {
+            const session = client.session.save() as any
+            localStorage.setItem('session', session)
+            const resp = await req.get('/users/me')
+            data = resp.data
+          } else {
+            // ignore
+          }
+        }
+        data = {
+          session: client.session.save() as any,
+          loginToken: base64url(dataLogin['token'])
+        }
+
+      } catch (error: any) {
+        // handle if need 2fa password
+        if (error.errorMessage === 'SESSION_PASSWORD_NEEDED') {
+          error.session = client.session.save() as any
+        }
+        throw error
+      }
+    }
+    return data
   }
 
   const loginByQrCode = async () => {
     try {
       const { password } = formLoginQRCode.getFieldsValue()
       setLoadingLogin(true)
-      const { data } = await req.post('/auth/qrCodeSignIn', { password, session: qrCode?.session })
+      const invitationCode = location.search.replace('?code=', '')
+      const data = localStorage.getItem('experimental') ? await _qrCodeSignIn(password) : (await req.post('/auth/qrCodeSignIn', { password, session: qrCode?.session, invitationCode }))?.data
       try {
-        req.post('/users/me/paymentSync')
+        // req.post('/users/me/paymentSync')
         if (localStorage.getItem('files')) {
           notification.info({
             key: 'sync',
@@ -175,7 +315,11 @@ const Login: React.FC<Props> = ({ me }) => {
         description: `Welcome back, ${data.user.name || data.user.username}! Please wait a moment...`
       })
       setLoadingLogin(false)
-      return history.replace('/dashboard')
+      if (localStorage.getItem('experimental')) {
+        window.close()
+      } else {
+        history.replace('/dashboard')
+      }
     } catch (error: any) {
       setLoadingLogin(false)
       return notification.error({
@@ -187,8 +331,9 @@ const Login: React.FC<Props> = ({ me }) => {
 
   useEffect(() => {
     if (JSCookie.get('authorization') && me?.user) {
-      console.log(me.user)
-      history.replace('/dashboard')
+      if (!localStorage.getItem('experimental')) {
+        return history.replace('/dashboard')
+      }
     }
   }, [me])
 
@@ -203,9 +348,28 @@ const Login: React.FC<Props> = ({ me }) => {
   useEffect(() => {
     if (method === 'qrCode') {
       if (!qrCode?.loginToken) {
-        req.get('/auth/qrCode').then(({ data }) => {
-          setQrCode(data)
-        })
+        if (localStorage.getItem('experimental')) {
+          anonymousTelegramClient.connect()
+            .then(client => {
+              client.invoke(new Api.auth.ExportLoginToken({
+                apiId: Number(process.env.REACT_APP_TG_API_ID),
+                apiHash: process.env.REACT_APP_TG_API_HASH,
+                exceptIds: []
+              }))
+                .then(data => {
+                  const session = client.session.save() as any
+                  localStorage.setItem('session', session)
+                  setQrCode({
+                    session: client.session.save() as any,
+                    loginToken: base64url(data['token'])
+                  })
+                })
+            })
+        } else {
+          req.get('/auth/qrCode').then(({ data }) => {
+            setQrCode(data)
+          })
+        }
       }
     } else {
       setQrCode(undefined)
@@ -214,14 +378,23 @@ const Login: React.FC<Props> = ({ me }) => {
 
   useEffect(() => {
     if (qrCode && method === 'qrCode' && !needPassword) {
-      setTimeout(() => {
-        if (method === 'qrCode' && !needPassword && qrCode?.loginToken && qrCode?.accessToken) {
-          req.post('/auth/qrCodeSignIn', {}, { headers: {
-            'Authorization': `Bearer ${qrCode.accessToken}`
-          } }).then(({ data }) => {
+      const timeout = setTimeout(() => {
+        if (method === 'qrCode' && !needPassword && qrCode?.loginToken) {
+          new Promise((resolve, reject) => {
+            if (localStorage.getItem('experimental')) {
+              _qrCodeSignIn().then(resolve).catch(reject)
+            } else {
+              const invitationCode = location.search.replace('?code=', '')
+              req.post('/auth/qrCodeSignIn', { invitationCode }, { headers: {
+                'Authorization': `Bearer ${qrCode.accessToken}`
+              } }).then(({ data }) => resolve(data)).catch(reject)
+            }
+          }).then((data: any) => {
+            // console.log(data)
             if (data?.user) {
+              clearTimeout(timeout)
               try {
-                req.post('/users/me/paymentSync')
+                // req.post('/users/me/paymentSync')
                 if (localStorage.getItem('files')) {
                   notification.info({
                     key: 'sync',
@@ -248,23 +421,36 @@ const Login: React.FC<Props> = ({ me }) => {
                 message: 'Success',
                 description: `Welcome back, ${data.user.name || data.user.username}! Please wait a moment...`
               })
-              history.replace('/dashboard')
+              if (localStorage.getItem('experimental')) {
+                window.close()
+              } else {
+                history.replace('/dashboard')
+              }
             } else {
               setQrCode(data)
             }
-          }).catch(({ response }: any) => {
-            if (response?.data?.details?.errorMessage === 'SESSION_PASSWORD_NEEDED') {
+          }).catch((error: any) => {
+            let errorMessage = error?.errorMessage
+            if (error.response && error.response.data) {
+              errorMessage = error.response.data.details?.errorMessage
+            }
+            if (errorMessage === 'SESSION_PASSWORD_NEEDED') {
               notification.info({
                 message: 'Info',
                 description: 'Please input your 2FA password'
               })
-              setQrCode({ ...qrCode, session: response.data.details.session })
+
+              let session = error.session
+              if (!session && error.response && error.response.data) {
+                session = error.response.data.details?.session
+              }
+              setQrCode({ ...qrCode, session })
               setNeedPassword(true)
             } else {
-              notification.error({
-                message: 'Error',
-                description: response?.data?.error || 'Something error'
-              })
+              // notification.error({
+              //   message: 'Error',
+              //   description: response?.data?.error || 'Something error'
+              // })
             }
           })
         }
@@ -276,70 +462,6 @@ const Login: React.FC<Props> = ({ me }) => {
     <Layout.Content className="container">
       <Row style={{ marginTop: '30px' }}>
         <Col xxl={{ span: 8, offset: 8 }} xl={{ span: 8, offset: 8 }} lg={{ span: 10, offset: 7 }} md={{ span: 14, offset: 5 }} span={22} offset={1}>
-          <Collapse>
-            <Collapse.Panel key="1" showArrow={false} header={<Typography.Text>
-              <GlobalOutlined /> Data center region
-            </Typography.Text>}>
-              <Typography.Paragraph type="secondary" style={{ fontSize: '14px' }}>
-                This will affect your upload and download speed, choose the nearest datacenter region to you.
-              </Typography.Paragraph>
-              <Row gutter={12} justify="center">
-                <Col span={24} md={8} style={{ textAlign: 'center' }}>
-                  <Card hoverable style={{ marginBottom: '12px' }} onClick={() => {
-                    setDc('sg')
-                    localStorage.setItem('dc', 'sg')
-                    return window.location.replace('https://teledriveapp.com/login')
-                  }}>
-                    <Typography.Paragraph style={dc === 'sg' || !dc ? {} : { visibility: 'hidden' }}>
-                      <CheckCircleTwoTone />
-                    </Typography.Paragraph>
-                    <Typography.Paragraph>
-                      <img style={{ width: '100%', maxWidth: '80px' }} src="https://upload.wikimedia.org/wikipedia/commons/4/48/Flag_of_Singapore.svg" />
-                    </Typography.Paragraph>
-                    <Typography.Paragraph>
-                      Singapore
-                    </Typography.Paragraph>
-                  </Card>
-                </Col>
-                <Col span={24} md={8} style={{ textAlign: 'center' }}>
-                  <Card hoverable style={{ marginBottom: '12px' }} onClick={() => {
-                    setDc('ge')
-                    localStorage.setItem('dc', 'ge')
-                    return window.location.replace('https://ge.teledriveapp.com/login')
-                  }}>
-                    <Typography.Paragraph style={dc === 'ge' ? {} : { visibility: 'hidden' }}>
-                      <CheckCircleTwoTone />
-                    </Typography.Paragraph>
-                    <Typography.Paragraph>
-                      <img style={{ width: '100%', maxWidth: '80px' }} src="https://upload.wikimedia.org/wikipedia/commons/b/ba/Flag_of_Germany.svg" />
-                    </Typography.Paragraph>
-                    <Typography.Paragraph>
-                      Frankfurt
-                    </Typography.Paragraph>
-                  </Card>
-                </Col>
-                <Col span={24} md={8} style={{ textAlign: 'center' }}>
-                  <Card hoverable style={{ marginBottom: '12px' }} onClick={() => {
-                    setDc('us')
-                    localStorage.setItem('dc', 'us')
-                    return window.location.replace('https://us.teledriveapp.com/login')
-                  }}>
-                    <Typography.Paragraph style={dc === 'us' ? {} : { visibility: 'hidden' }}>
-                      <CheckCircleTwoTone />
-                    </Typography.Paragraph>
-                    <Typography.Paragraph>
-                      <img style={{ width: '100%', maxWidth: '80px' }} src="https://upload.wikimedia.org/wikipedia/commons/0/05/US_flag_51_stars.svg" />
-                    </Typography.Paragraph>
-                    <Typography.Paragraph>
-                      New York
-                    </Typography.Paragraph>
-                  </Card>
-                </Col>
-              </Row>
-            </Collapse.Panel>
-          </Collapse>
-          <br /><br />
-
           <Typography.Title level={2}>
             Login with Telegram
           </Typography.Title>
@@ -416,7 +538,7 @@ const Login: React.FC<Props> = ({ me }) => {
                   {!needPassword ? <>
                     <Row align="middle" gutter={24}>
                       <Col span={24} lg={12}>
-                        <Typography.Paragraph style={{ textAlign: 'center', marginBottom: '20px' }}>
+                        <Typography.Paragraph style={{ textAlign: 'center', marginBottom: '20px', background: '#fff', padding: '20px' }}>
                           {qrCode?.loginToken ? <QRCode size={165} value={`tg://login?token=${qrCode?.loginToken}`} /> : <Spin />}
                         </Typography.Paragraph>
                       </Col>

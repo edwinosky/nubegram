@@ -42,6 +42,11 @@ export const Endpoint = {
       this._handlers.push(this._buildRouteHandler('get', method, descriptor, ...args))
     }
   },
+  HEAD: function (...args: [(string | RouteOptions)?, RouteOptions?]): any {
+    return (_: any, method: string, descriptor: PropertyDescriptor): void => {
+      this._handlers.push(this._buildRouteHandler('head', method, descriptor, ...args))
+    }
+  },
   POST: function (...args: [(string | RouteOptions)?, RouteOptions?]): any {
     return (_: any, method: string, descriptor: PropertyDescriptor): void => {
       this._handlers.push(this._buildRouteHandler('post', method, descriptor, ...args))
@@ -69,12 +74,14 @@ export const Endpoint = {
         try {
           return await target(req, res, next)
         } catch (error) {
-          if (/.*You need to call \.connect\(\)/gi.test(error.message) && trial++ < 5) {
-            await new Promise(res => setTimeout(res, 1000))
+          if (/.*You need to call \.connect\(\)/gi.test(error.message) && trial < 5) {
+            await new Promise(res => setTimeout(res, ++trial * 1000))
             req.tg?.connect()
             return await execute()
           }
-          console.error('RequestWrapper', error)
+          if (process.env.ENV !== 'production') {
+            console.error('RequestWrapper', error)
+          }
           req.tg?.disconnect()
           const isValidCode = error.code && Number(error.code) > 99 && Number(error.code) < 599
           return next(error.code ? {
@@ -120,17 +127,16 @@ export const Endpoint = {
             await descriptor.value(req, res, next)
             req.tg?.disconnect()
           } catch (error) {
-            if (/.*You need to call \.connect\(\)/gi.test(error.message) && trial++ < 5) {
-              await new Promise(res => setTimeout(res, 1000))
+            if (/.*You need to call \.connect\(\)/gi.test(error.message) && trial < 5) {
+              await new Promise(res => setTimeout(res, ++trial * 1000))
               req.tg?.connect()
               return await execute()
             }
-            console.error('handler', error.message)
+            if (process.env.ENV !== 'production') {
+              console.error('handler', error.message)
+            }
             req.tg?.disconnect()
             const isValidCode = error.code && Number(error.code) > 99 && Number(error.code) < 599
-            // if (!isValidCode) {
-            //   process.exit(1)
-            // }
             return next(error.code ? {
               status: isValidCode ? error.code : 500, body: {
                 error: error.message, details: serializeError(error)

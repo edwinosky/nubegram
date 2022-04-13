@@ -1,9 +1,11 @@
 import 'source-map-support/register'
 require('dotenv').config({ path: '.env' })
 
+import axios from 'axios'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import compression from 'compression'
+import { cURL } from 'curly-express'
 import express, {
   json,
   NextFunction,
@@ -16,14 +18,11 @@ import express, {
 import listEndpoints from 'express-list-endpoints'
 import morgan from 'morgan'
 import path from 'path'
-import { Pool } from 'pg'
-import { RateLimiterPostgres } from 'rate-limiter-flexible'
 import { serializeError } from 'serialize-error'
-import * as Sentry from '@sentry/node'
-import * as Tracing from '@sentry/tracing'
 import { API } from './api'
 import { runDB } from './model'
 import { Redis } from './service/Cache'
+import { markdownSafe } from './utils/StringParser'
 
 // import bigInt from 'json-bigint'
 // const parse = JSON.parse
@@ -54,27 +53,9 @@ import { Redis } from './service/Cache'
 Redis.connect()
 runDB()
 
+const curl = cURL({ attach: true })
+
 const app = express()
-Sentry.init({
-  dsn: 'https://9b19fe16a45741798b87cfd3833822b2@o1062116.ingest.sentry.io/6052883',
-  integrations: [
-    // enable HTTP calls tracing
-    new Sentry.Integrations.Http({ tracing: true }),
-    // enable Express.js middleware tracing
-    new Tracing.Integrations.Express({ app }),
-  ],
-
-  // Set tracesSampleRate to 1.0 to capture 100%
-  // of transactions for performance monitoring.
-  // We recommend adjusting this value in production
-  tracesSampleRate: 1.0,
-})
-
-// RequestHandler creates a separate execution context using domains, so that every
-// transaction/span/breadcrumb is attached to its own Hub instance
-app.use(Sentry.Handlers.requestHandler())
-// TracingHandler creates a trace for every incoming request
-app.use(Sentry.Handlers.tracingHandler())
 
 app.set('trust proxy', 1)
 
@@ -89,44 +70,65 @@ app.use(json())
 app.use(urlencoded({ extended: true }))
 app.use(raw())
 app.use(cookieParser())
-app.use(morgan('tiny'))
+if (process.env.ENV !== 'production') {
+  app.use(morgan('tiny'))
+}
+app.use(curl)
 // app.use((req, _, next) => {
 //   req['ip'] = req.headers['cf-connecting-ip'] as string || req.ip
 //   return next()
 // })
 
-const rateLimiter = new RateLimiterPostgres({
-  storeClient: new Pool({
-    host: process.env.DB_HOST,
-    port: Number(process.env.DB_PORT) || 5432,
-    database: process.env.DB_NAME,
-    user: process.env.DB_USERNAME,
-    password: process.env.DB_PASSWORD
-  }),
-  points: Number(process.env.RPS) || 20,
-  duration: 1,
-  tableName: 'rate_limits',
-  tableCreated: false
-})
+// const rateLimiter = new RateLimiterPostgres({
+//   storeClient: new Pool({
+//     host: process.env.DB_HOST,
+//     port: Number(process.env.DB_PORT) || 5432,
+//     database: process.env.DB_NAME,
+//     user: process.env.DB_USERNAME,
+//     password: process.env.DB_PASSWORD
+//   }),
+//   points: Number(process.env.RPS) || 20,
+//   duration: 1,
+//   tableName: 'rate_limits',
+//   tableCreated: false
+// })
 
 app.get('/ping', (_, res) => res.send({ pong: true }))
 app.get('/security.txt', (_, res) => {
   res.setHeader('Content-Type', 'text/plain')
-  res.send('Contact: admin@onlypacks.club\nPreferred-Languages: en, id')
+  res.send('Contact: security@teledriveapp.com\nPreferred-Languages: en, id')
 })
-app.use('/api', (req, res, next) => {
-  rateLimiter.consume(req.headers['cf-connecting-ip'] as string || req.ip).then(() => next()).catch(error => {
-    if (error.msBeforeNext) {
-      return res.status(429).setHeader('retry-after', error.msBeforeNext).send({ error: 'Too many requests', retryAfter: error.msBeforeNext })
-    }
-    throw error
-  })
-}, API)
+// app.use('/api', (req, res, next) => {
+//   rateLimiter.consume(req.headers['cf-connecting-ip'] as string || req.ip).then(() => next()).catch(error => {
+//     if (error.msBeforeNext) {
+//       return res.status(429).setHeader('retry-after', error.msBeforeNext).send({ error: 'Too many requests', retryAfter: error.msBeforeNext })
+//     }
+//     throw error
+//   })
+// }, API)
+app.use('/api', API)
 
 // error handler
-app.use(Sentry.Handlers.errorHandler())
-app.use((err: { status?: number, body?: Record<string, any> }, _: Request, res: Response, __: NextFunction) => {
-  console.error(err)
+app.use(async (err: { status?: number, body?: Record<string, any> }, req: Request, res: Response, __: NextFunction) => {
+  if (process.env.ENV !== 'production') {
+    console.error(err)
+  }
+  if ((err.status || 500) >= 500) {
+    if (process.env.TG_BOT_TOKEN && (process.env.TG_BOT_ERROR_REPORT_ID || process.env.TG_BOT_OWNER_ID)) {
+      try {
+        await axios.post(`https://api.telegram.org/bot${process.env.TG_BOT_TOKEN}/sendMessage`, {
+          chat_id: process.env.TG_BOT_ERROR_REPORT_ID || process.env.TG_BOT_OWNER_ID,
+          parse_mode: 'Markdown',
+          text: `🔥 *${markdownSafe(err.body.error  || (err as any).message || 'Unknown error')}*\n\n\`[${err.status || 500}] ${markdownSafe(req.protocol + '://' + req.get('host') + req.originalUrl)}\`\n\n\`\`\`\n${JSON.stringify(serializeError(err), null, 2)}\n\`\`\`\n\n\`\`\`\n${req['_curl']}\n\`\`\``
+        })
+      } catch (error) {
+        if (process.env.ENV !== 'production') {
+          console.error(error)
+        }
+        // ignore
+      }
+    }
+  }
   return res.status(err.status || 500).send(err.body || { error: 'Something error', details: serializeError(err) })
 })
 

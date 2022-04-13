@@ -1,14 +1,13 @@
-import { Api } from '@mgilangjanuar/telegram'
 import axios from 'axios'
 import { Request, Response } from 'express'
 import moment from 'moment'
+import { Api } from 'teledrive-client'
 import { Files } from '../../model/entities/Files'
 import { Usages } from '../../model/entities/Usages'
 import { Users as Model } from '../../model/entities/Users'
 import { Redis } from '../../service/Cache'
-import { Midtrans, TransactionDetails } from '../../service/Midtrans'
-import { PayPal, SubscriptionDetails } from '../../service/PayPal'
 import { buildSort, buildWhereQuery } from '../../utils/FilterQuery'
+import { markdownSafe } from '../../utils/StringParser'
 import { Endpoint } from '../base/Endpoint'
 import { Auth, AuthMaybe } from '../middlewares/Auth'
 import { AuthKey } from '../middlewares/Key'
@@ -51,10 +50,10 @@ export class Users {
 
   @Endpoint.GET('/', { middlewares: [Auth] })
   public async find(req: Request, res: Response): Promise<any> {
-    const { sort, offset, limit, ...filters } = req.query
+    const { sort, offset, limit, search, ...filters } = req.query
     const [users, length] = await Model.createQueryBuilder('users')
-      .select('users.username')
-      .where(buildWhereQuery(filters) || 'true')
+      .select(req.user.role === 'admin' ? ['users.id', 'users.username', 'users.name', 'users.role', 'users.created_at'] : ['users.username'])
+      .where(search ? `username ilike '%${search}%' or name ilike '%${search}%'` :  buildWhereQuery(filters) || 'true')
       .skip(Number(offset) || undefined)
       .take(Number(limit) || undefined)
       .orderBy(buildSort(sort as string))
@@ -65,14 +64,18 @@ export class Users {
   @Endpoint.PATCH('/me/settings', { middlewares: [Auth] })
   public async settings(req: Request, res: Response): Promise<any> {
     const { settings } = req.body
-    if (settings.theme === 'dark' && (!req.user.plan || req.user.plan === 'free') && moment().format('l') !== '2/2/2022') {
-      throw { status: 402, body: { error: 'You need to upgrade your plan to use dark theme' } }
-    }
+    // if (settings.theme === 'dark' && (!req.user.plan || req.user.plan === 'free') && moment().format('l') !== '2/2/2022') {
+    //   throw { status: 402, body: { error: 'You need to upgrade your plan to use dark theme' } }
+    // }
+    // if (settings.saved_location && (!req.user.plan || req.user.plan === 'free') && moment().format('l') !== '2/2/2022') {
+    //   throw { status: 402, body: { error: 'You need to upgrade your plan to use this feature' } }
+    // }
     req.user.settings = {
       ...req.user.settings || {},
       ...settings
     }
-    await req.user.save()
+    await Model.update(req.user.id, req.user)
+    await Redis.connect().del(`auth:${req.authKey}`)
     return res.send({ settings: req.user?.settings })
   }
 
@@ -82,14 +85,15 @@ export class Users {
     if (agreement !== 'permanently removed') {
       throw { status: 400, body: { error: 'Invalid agreement' } }
     }
-    if (reason) {
+    if (reason && process.env.TG_BOT_TOKEN && process.env.TG_BOT_OWNER_ID) {
       await axios.post(`https://api.telegram.org/bot${process.env.TG_BOT_TOKEN}/sendMessage`, {
         chat_id: process.env.TG_BOT_OWNER_ID,
-        text: `😭 ${req.user.name} (@${req.user.username}) removed their account.\n\nReason: ${reason}`
+        parse_mode: 'Markdown',
+        text: `😭 ${markdownSafe(req.user.name)} (@${markdownSafe(req.user.username)}) removed their account.\n\nReason: ${markdownSafe(reason)}\n\nfrom: \`${markdownSafe(req.headers['cf-connecting-ip'] as string || req.ip)}\`\ndomain: \`${req.headers['authority'] || req.headers.origin}\`${req.user ? `\nplan: ${req.user.plan}${req.user.subscription_id ? `\npaypal: ${req.user.subscription_id}` : ''}${req.user.midtrans_id ? `\nmidtrans: ${req.user.midtrans_id}` : ''}` : ''}`
       })
     }
     await Files.delete({ user_id: req.user.id })
-    await req.user.remove()
+    await Model.delete(req.user.id)
     const success = await req.tg.invoke(new Api.auth.LogOut())
     return res.clearCookie('authorization').clearCookie('refreshToken').send({ success })
   }
@@ -136,7 +140,8 @@ export class Users {
       req.user.subscription_id = result?.subscription_id
       req.user.midtrans_id = result?.midtrans_id
       req.user.plan = result?.plan as any
-      await req.user.save()
+      await Model.update(req.user.id, req.user)
+      await Redis.connect().del(`auth:${req.authKey}`)
     }
     return res.status(202).send({ accepted: true })
   }
@@ -172,61 +177,6 @@ export class Users {
       return res.end()
     }
 
-    if (username === 'me' || username === req.user.username) {
-      const username = req.userAuth.username || req.userAuth.phone
-
-      let paymentDetails: SubscriptionDetails = null, midtransPaymentDetails: TransactionDetails = null
-
-      if (req.user.subscription_id) {
-        try {
-          paymentDetails = await Redis.connect().getFromCacheFirst(`paypal:subscription:${req.user.subscription_id}`, async () => await new PayPal().getSubscription(req.user.subscription_id), 600)
-        } catch (error) {
-          // ignore
-        }
-      }
-
-      if (req.user.midtrans_id) {
-        try {
-          midtransPaymentDetails = await Redis.connect().getFromCacheFirst(`midtrans:transaction:${req.user.midtrans_id}`, async () => await new Midtrans().getTransactionStatus(req.user.midtrans_id), 600)
-          if (!midtransPaymentDetails?.transaction_status) {
-            midtransPaymentDetails = null
-          }
-        } catch (error) {
-          // ignore
-        }
-      }
-
-      let plan: 'free' | 'premium' = 'free'
-
-      if (paymentDetails && paymentDetails.plan_id === process.env.PAYPAL_PLAN_PREMIUM_ID) {
-        const isExpired = new Date().getTime() - new Date(paymentDetails.billing_info?.last_payment.time).getTime() > 3.154e+10
-        if (paymentDetails.billing_info?.last_payment && !isExpired || ['APPROVED', 'ACTIVE'].includes(paymentDetails.status)) {
-          plan = 'premium'
-        }
-      }
-
-      if (midtransPaymentDetails && (midtransPaymentDetails.settlement_time || midtransPaymentDetails.transaction_time)) {
-        const isExpired = new Date().getTime() - new Date(midtransPaymentDetails.settlement_time || midtransPaymentDetails.transaction_time).getTime() > 3.154e+10
-        if (['settlement', 'capture'].includes(midtransPaymentDetails.transaction_status) && !isExpired) {
-          plan = 'premium'
-        }
-      }
-
-      req.user.plan = plan
-      req.user.username = username
-      req.user.name = `${req.userAuth.firstName || ''} ${req.userAuth.lastName || ''}`.trim() || username
-      if (plan === 'free' && new Date().getTime() - req.user.updated_at.getTime() > 2.592e+8) {
-        req.user.subscription_id = null
-        req.user.midtrans_id = null
-      }
-      await req.user.save()
-      // await Model.update(req.user.id, {
-      //   plan,
-      //   ...username ? { username } : {},
-      //   name: `${req.userAuth.firstName || ''} ${req.userAuth.lastName || ''}`.trim() || username,
-      // })
-    }
-
     const user = username === 'me' || username === req.user.username ? req.user : await Model.findOne({ where: [
       { username },
       { id: username }] })
@@ -237,28 +187,30 @@ export class Users {
     return res.send({ user })
   }
 
-  // @Endpoint.USE('/upgradePlans', { middlewares: [Auth] })
-  // public async upgradePlans(req: Request, res: Response): Promise<any> {
-  //   if (req.user.username !== 'mgilangjanuar') {
-  //     throw { status: 403, body: { error: 'Forbidden' } }
-  //   }
+  @Endpoint.DELETE('/:id', { middlewares: [Auth] })
+  public async delete(req: Request, res: Response): Promise<any> {
+    if (req.user.role !== 'admin') {
+      throw { status: 403, body: { error: 'You are not allowed to do this' } }
+    }
+    const { id } = req.params
+    await Files.delete({ user_id: id })
+    await Model.delete(id)
+    return res.send({})
+  }
 
-  //   const { username, plan, expired } = req.query || req.body
-  //   let user: any
-  //   if (username && plan && expired) {
-  //     user = await Model.createQueryBuilder('users')
-  //       .where('users.username = :username', { username }).update().set({
-  //         plan,
-  //         plan_expired_at: moment().add(expired, 'months').toISOString()
-  //       }).returning('*').execute()
-  //   }
-
-  //   await Model.createQueryBuilder('users')
-  //     .where('users.plan_expired_at > :date', {
-  //       date: moment().add(3, 'days').toISOString()
-  //     }).update().set({
-  //       plan: null
-  //     }).execute()
-  //   return res.send({ ok: true, ...user ? { user: user.raw?.[0] } : {} })
-  // }
+  @Endpoint.PATCH('/:id', { middlewares: [Auth] })
+  public async update(req: Request, res: Response): Promise<any> {
+    if (req.user.role !== 'admin') {
+      throw { status: 403, body: { error: 'You are not allowed to do this' } }
+    }
+    const { id } = req.params
+    const { user } = req.body
+    if (!user) {
+      throw { status: 400, body: { error: 'User is required' } }
+    }
+    await Model.update(id, {
+      role: user?.role
+    })
+    return res.send({})
+  }
 }

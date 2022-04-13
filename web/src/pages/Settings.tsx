@@ -1,21 +1,24 @@
 import {
   ArrowLeftOutlined,
   BugOutlined,
+  CloudUploadOutlined,
   CrownOutlined,
+  DeleteOutlined,
+  DownloadOutlined,
+  ExpandAltOutlined,
+  ExperimentOutlined,
   FrownOutlined,
+  LoginOutlined,
   InfoOutlined,
   LogoutOutlined,
   MobileOutlined,
-  ReloadOutlined,
-  WarningOutlined,
-  ExpandAltOutlined,
-  GlobalOutlined,
-  DeleteOutlined,
   MonitorOutlined,
+  ReloadOutlined,
   SkinOutlined,
   SyncOutlined,
-  DownloadOutlined
+  WarningOutlined
 } from '@ant-design/icons'
+import { Api } from 'teledrive-client'
 import {
   Avatar,
   Button,
@@ -40,9 +43,11 @@ import pwaInstallHandler from 'pwa-install-handler'
 import React, { useEffect, useState } from 'react'
 import { useThemeSwitcher } from 'react-css-theme-switcher'
 import { useHistory } from 'react-router-dom'
-import useSWRImmutable from 'swr/immutable'
+import useSWR from 'swr'
 import * as serviceWorkerRegistration from '../serviceWorkerRegistration'
+import { VERSION } from '../utils/Constant'
 import { apiUrl, fetcher, req } from '../utils/Fetcher'
+import { telegramClient } from '../utils/Telegram'
 
 interface Props {
   me?: any,
@@ -55,6 +60,7 @@ const Settings: React.FC<Props> = ({ me, mutate, error }) => {
   const [expandableRows, setExpandableRows] = useState<boolean>()
   const [logoutConfirmation, setLogoutConfirmation] = useState<boolean>(false)
   const [removeConfirmation, setRemoveConfirmation] = useState<boolean>(false)
+  const [expFeatures, setExpFeatures] = useState<boolean>(false)
   const [changeDCConfirmation, setChangeDCConfirmation] = useState<string>()
   const [loadingChangeServer, setLoadingChangeServer] = useState<boolean>(false)
   const [loadingRemove, setLoadingRemove] = useState<boolean>(false)
@@ -62,9 +68,10 @@ const Settings: React.FC<Props> = ({ me, mutate, error }) => {
   const [reportBug, setReportBug] = useState<boolean>(false)
   const [pwa, setPwa] = useState<{ canInstall: boolean, install: () => Promise<boolean> }>()
   const [dc, setDc] = useState<string>()
+  const [form] = useForm()
   const [formRemoval] = useForm()
-  const { data: respVersion } = useSWRImmutable('/utils/version', fetcher)
   const { currentTheme } = useThemeSwitcher()
+  const { data: dialogs } = useSWR('/dialogs?limit=75&offset=0', fetcher)
 
   const save = async (settings: any): Promise<void> => {
     try {
@@ -113,8 +120,21 @@ const Settings: React.FC<Props> = ({ me, mutate, error }) => {
     }
   }, [])
 
+  useEffect(() => {
+    if (dc) {
+      form.setFieldsValue({ change_server: dc })
+    }
+  }, [dc])
+
+  useEffect(() => {
+    if (me) {
+      form.setFieldsValue({ saved_location: me?.user.settings?.saved_location || 'me' })
+    }
+  }, [me])
+
   const logout = async () => {
     await req.post('/auth/logout', {}, destroySession ? { params: { destroySession: 1 } } : undefined)
+    window.localStorage.clear()
     return window.location.replace('/')
   }
 
@@ -177,6 +197,11 @@ const Settings: React.FC<Props> = ({ me, mutate, error }) => {
 
   const emailLink = () => `mailto:bug@teledriveapp.com?subject=TeleDrive%20-%20Bug%20Report&body=User%3A%20${decodeURIComponent(me?.user.username)}%0D%0AOrigin%3A%20${decodeURIComponent(window.location.origin)}%0D%0ADevice%3A%20${decodeURIComponent(navigator.userAgent)}%0D%0AProblem%3A%20%3CPlease%20describe%20your%20problem%20here%3E%0D%0AExpectation%3A%20%3CPlease%20describe%20your%20expectation%20here%3E`
 
+  const buildPathDialog = (dialog: any) => {
+    const peerType = dialog.isUser ? 'user' : dialog.isChannel ? 'channel' : 'chat'
+    return `${peerType}/${dialog.entity?.id}/_${dialog.entity?.accessHash ? `/${dialog.entity?.accessHash}` : ''}`
+  }
+
   return <>
     <Layout.Content>
       <Row style={{ margin: '50px 12px 100px' }}>
@@ -201,11 +226,11 @@ const Settings: React.FC<Props> = ({ me, mutate, error }) => {
                 </Button>
               </Typography.Paragraph>
               <Typography.Paragraph style={{ textAlign: 'center' }} type="secondary">
-                v{respVersion?.version}
+                v{VERSION}
               </Typography.Paragraph>
             </Col>
           </Row>]}>
-            <Form layout="horizontal" labelAlign="left" labelCol={{ span: 12 }} wrapperCol={{ span: 12 }}>
+            <Form form={form} layout="horizontal" labelAlign="left" labelCol={{ span: 12 }} wrapperCol={{ span: 12 }}>
               <List header="Interface" bordered={false}>
                 {pwa?.canInstall && <List.Item key="install" actions={[<Form.Item>
                   <Button shape="round" icon={<MobileOutlined />} onClick={pwa?.install}>Install</Button>
@@ -230,6 +255,17 @@ const Settings: React.FC<Props> = ({ me, mutate, error }) => {
               </List>
 
               <List header="Operational">
+                {dialogs?.dialogs && <List.Item key="saved-location" actions={[<Form.Item name="saved_location">
+                  <Select className="saved-location ghost" showSearch
+                    filterOption={(input, option: any) => !option.children.toLowerCase().indexOf(input.toLowerCase())}
+                    onChange={saved_location => save({ saved_location: saved_location === 'me' ? null : saved_location })}>
+                    <Select.Option key="me" value="me">Saved Messages</Select.Option>
+                    {dialogs?.dialogs.filter((d: any) => d.entity.id != me?.user.tg_id).map((dialog: any) => <Select.Option key={dialog.entity.id} value={buildPathDialog(dialog)}>{dialog.title}</Select.Option>)}
+                  </Select>
+                </Form.Item>]}>
+                  <List.Item.Meta title={<Space><CloudUploadOutlined /><>Upload Destination</></Space>} description="Select where to save files" />
+                </List.Item>}
+
                 <List.Item key="check-for-updates" actions={[<Form.Item>
                   <Button shape="round" icon={<ReloadOutlined />} onClick={() => {
                     serviceWorkerRegistration.unregister();
@@ -240,22 +276,41 @@ const Settings: React.FC<Props> = ({ me, mutate, error }) => {
                 </List.Item>
 
                 <List.Item key="report-bugs" actions={[<Form.Item>
-                  <Button shape="round" icon={<BugOutlined />} onClick={() => setReportBug(true)}>Report</Button>
+                  <Button shape="round" icon={<BugOutlined />} onClick={() => window.open('https://github.com/mgilangjanuar/teledrive/issues/new?assignees=&labels=bug&template=bug_report.md&title=', '_blank')}>Report</Button>
                 </Form.Item>]}>
                   <List.Item.Meta title={<Space><MonitorOutlined /><>Report Bug</></Space>} description="Send your activities for reporting" />
                 </List.Item>
               </List>
 
               <List header="Danger Zone">
-                <List.Item key="change-server" actions={[<Form.Item name="change_server">
-                  {dc && <Select className="change-server" defaultValue={dc} value={dc} onChange={server => dc !== server ? setChangeDCConfirmation(server) : undefined}>
+                <List.Item key="join-exp" actions={[<Form.Item>
+                  <Button shape="round" icon={localStorage.getItem('experimental') && localStorage.getItem('session') ? <LogoutOutlined /> : <LoginOutlined />} onClick={async () => {
+                    if (localStorage.getItem('experimental') && localStorage.getItem('session')) {
+                      const client = await telegramClient.connect()
+                      localStorage.removeItem('experimental')
+                      localStorage.removeItem('session')
+                      location.reload()
+                      try {
+                        await client.invoke(new Api.auth.LogOut())
+                      } catch (error) {
+                        // ignore
+                      }
+                    } else {
+                      setExpFeatures(true)
+                    }
+                  }}>{localStorage.getItem('experimental') && localStorage.getItem('session') ? 'Revoke' : 'Join'}</Button>
+                </Form.Item>]}>
+                  <List.Item.Meta title={<Space><ExperimentOutlined /><>Experimental</></Space>} description="Join to the experimental features" />
+                </List.Item>
+                {/* <List.Item key="change-server" actions={[<Form.Item name="change_server">
+                  {dc && <Select className="change-server ghost" onChange={server => dc !== server ? setChangeDCConfirmation(server) : undefined}>
                     <Select.Option value="sg">&#127480;&#127468; Singapore</Select.Option>
                     <Select.Option value="ge">&#127465;&#127466; Frankfurt</Select.Option>
                     <Select.Option value="us">&#127482;&#127480; New York</Select.Option>
                   </Select>}
                 </Form.Item>]}>
                   <List.Item.Meta title={<Space><GlobalOutlined /><>Change Server</></Space>} description="Migrate to another datacenter" />
-                </List.Item>
+                </List.Item> */}
 
                 <List.Item key="delete-account" actions={[<Form.Item>
                   <Button shape="round" danger type="primary" icon={<FrownOutlined />} onClick={() => setRemoveConfirmation(true)}>Delete</Button>
@@ -293,7 +348,7 @@ const Settings: React.FC<Props> = ({ me, mutate, error }) => {
     </Typography.Text>}
     visible={removeConfirmation}
     onCancel={() => setRemoveConfirmation(false)}
-    onOk={remove}
+    onOk={formRemoval.submit}
     cancelButtonProps={{ shape: 'round' }}
     okButtonProps={{ danger: true, type: 'primary', shape: 'round', loading: loadingRemove }}>
       <Form form={formRemoval} onFinish={remove} layout="vertical">
@@ -342,6 +397,51 @@ const Settings: React.FC<Props> = ({ me, mutate, error }) => {
           Send an email to <a href={emailLink()}>bug@teledriveapp.com</a> with logs and additional screenshots in the attachment
         </li>
       </ol>
+    </Modal>
+
+    <Modal title={<Typography.Text>
+      <Typography.Text type="warning"><WarningOutlined /></Typography.Text> Join Experimental
+    </Typography.Text>}
+    visible={expFeatures}
+    onCancel={() => {
+      localStorage.removeItem('experimental')
+      setExpFeatures(false)
+    }}
+    onOk={() => {
+      localStorage.setItem('experimental', 'true')
+      setExpFeatures(false)
+      window.open(`${window.location.origin}/login`, '_blank', 'location=yes,height=720,width=520,scrollbars=yes,status=yes,top=100,left=300')
+    }}
+    cancelButtonProps={{ shape: 'round' }}
+    okButtonProps={{ type: 'primary', shape: 'round' }}>
+      <Typography.Paragraph>
+        You will get this experimental features:
+      </Typography.Paragraph>
+      <ul>
+        <li>
+          <strong>Ultra Upload</strong>
+          <Typography.Paragraph>
+            Your files will directly upload to the Telegram servers and the speed will follow your internet connection.
+          </Typography.Paragraph>
+        </li>
+        <li>
+          <strong>Fast Download</strong>
+          <Typography.Paragraph>
+            Same like Ultra Upload, your files will be downloaded directly from the Telegram servers. But, it will have some limitations:
+            <ul>
+              <li>Only works with chrome-based browsers</li>
+              <li>The max download size is 2GB for free users or follows your device memory</li>
+            </ul>
+          </Typography.Paragraph>
+        </li>
+      </ul>
+      <Typography.Paragraph>
+        Note. Those features may have bugs please report them to <a href={emailLink()}>bug@teledriveapp.com</a> and you can always revoke from experimental features anytime.
+      </Typography.Paragraph>
+
+      <Typography.Paragraph strong>
+        You need to be logged in again to TeleDrive. Continue?
+      </Typography.Paragraph>
     </Modal>
   </>
 }

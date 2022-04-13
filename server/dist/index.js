@@ -18,40 +18,39 @@ var __importStar = (this && this.__importStar) || function (mod) {
     __setModuleDefault(result, mod);
     return result;
 };
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 require("source-map-support/register");
 require('dotenv').config({ path: '.env' });
+const axios_1 = __importDefault(require("axios"));
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const cors_1 = __importDefault(require("cors"));
 const compression_1 = __importDefault(require("compression"));
+const curly_express_1 = require("curly-express");
 const express_1 = __importStar(require("express"));
 const express_list_endpoints_1 = __importDefault(require("express-list-endpoints"));
 const morgan_1 = __importDefault(require("morgan"));
 const path_1 = __importDefault(require("path"));
-const pg_1 = require("pg");
-const rate_limiter_flexible_1 = require("rate-limiter-flexible");
 const serialize_error_1 = require("serialize-error");
-const Sentry = __importStar(require("@sentry/node"));
-const Tracing = __importStar(require("@sentry/tracing"));
 const api_1 = require("./api");
 const model_1 = require("./model");
 const Cache_1 = require("./service/Cache");
+const StringParser_1 = require("./utils/StringParser");
 Cache_1.Redis.connect();
 (0, model_1.runDB)();
+const curl = (0, curly_express_1.cURL)({ attach: true });
 const app = (0, express_1.default)();
-Sentry.init({
-    dsn: 'https://9b19fe16a45741798b87cfd3833822b2@o1062116.ingest.sentry.io/6052883',
-    integrations: [
-        new Sentry.Integrations.Http({ tracing: true }),
-        new Tracing.Integrations.Express({ app }),
-    ],
-    tracesSampleRate: 1.0,
-});
-app.use(Sentry.Handlers.requestHandler());
-app.use(Sentry.Handlers.tracingHandler());
 app.set('trust proxy', 1);
 app.use((0, cors_1.default)({
     credentials: true,
@@ -64,38 +63,38 @@ app.use((0, express_1.json)());
 app.use((0, express_1.urlencoded)({ extended: true }));
 app.use((0, express_1.raw)());
 app.use((0, cookie_parser_1.default)());
-app.use((0, morgan_1.default)('tiny'));
-const rateLimiter = new rate_limiter_flexible_1.RateLimiterPostgres({
-    storeClient: new pg_1.Pool({
-        host: process.env.DB_HOST,
-        port: Number(process.env.DB_PORT) || 5432,
-        database: process.env.DB_NAME,
-        user: process.env.DB_USERNAME,
-        password: process.env.DB_PASSWORD
-    }),
-    points: Number(process.env.RPS) || 20,
-    duration: 1,
-    tableName: 'rate_limits',
-    tableCreated: false
-});
+if (process.env.ENV !== 'production') {
+    app.use((0, morgan_1.default)('tiny'));
+}
+app.use(curl);
 app.get('/ping', (_, res) => res.send({ pong: true }));
 app.get('/security.txt', (_, res) => {
     res.setHeader('Content-Type', 'text/plain');
-    res.send('Contact: admin@onlypacks.club\nPreferred-Languages: en, id');
+    res.send('Contact: security@teledriveapp.com\nPreferred-Languages: en, id');
 });
-app.use('/api', (req, res, next) => {
-    rateLimiter.consume(req.headers['cf-connecting-ip'] || req.ip).then(() => next()).catch(error => {
-        if (error.msBeforeNext) {
-            return res.status(429).setHeader('retry-after', error.msBeforeNext).send({ error: 'Too many requests', retryAfter: error.msBeforeNext });
+app.use('/api', api_1.API);
+app.use((err, req, res, __) => __awaiter(void 0, void 0, void 0, function* () {
+    if (process.env.ENV !== 'production') {
+        console.error(err);
+    }
+    if ((err.status || 500) >= 500) {
+        if (process.env.TG_BOT_TOKEN && (process.env.TG_BOT_ERROR_REPORT_ID || process.env.TG_BOT_OWNER_ID)) {
+            try {
+                yield axios_1.default.post(`https://api.telegram.org/bot${process.env.TG_BOT_TOKEN}/sendMessage`, {
+                    chat_id: process.env.TG_BOT_ERROR_REPORT_ID || process.env.TG_BOT_OWNER_ID,
+                    parse_mode: 'Markdown',
+                    text: `🔥 *${(0, StringParser_1.markdownSafe)(err.body.error || err.message || 'Unknown error')}*\n\n\`[${err.status || 500}] ${(0, StringParser_1.markdownSafe)(req.protocol + '://' + req.get('host') + req.originalUrl)}\`\n\n\`\`\`\n${JSON.stringify((0, serialize_error_1.serializeError)(err), null, 2)}\n\`\`\`\n\n\`\`\`\n${req['_curl']}\n\`\`\``
+                });
+            }
+            catch (error) {
+                if (process.env.ENV !== 'production') {
+                    console.error(error);
+                }
+            }
         }
-        throw error;
-    });
-}, api_1.API);
-app.use(Sentry.Handlers.errorHandler());
-app.use((err, _, res, __) => {
-    console.error(err);
+    }
     return res.status(err.status || 500).send(err.body || { error: 'Something error', details: (0, serialize_error_1.serializeError)(err) });
-});
+}));
 app.use((0, express_1.static)(path_1.default.join(__dirname, '..', '..', 'web', 'build')));
 app.use((req, res) => {
     try {
